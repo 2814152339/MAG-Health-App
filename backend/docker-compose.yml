@@ -1,0 +1,31 @@
+services:
+  backend:
+    profiles: [backend]
+    build:
+      context: .
+      args:
+        INSTALL_MEDIAPIPE: ${INSTALL_MEDIAPIPE:-false}
+    environment:
+      RUYUAN_API_TOKEN: ${RUYUAN_API_TOKEN:?Generate a private per-installation RUYUAN_API_TOKEN}
+      RUYUAN_DATA_DIR: /data
+      RUYUAN_WORKERS: "1"
+      RUYUAN_FACE_MODEL: ${RUYUAN_FACE_MODEL:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ruyuan-private:/data
+      - ./models:/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  ruyuan-private:
