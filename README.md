@@ -46,7 +46,9 @@ bash scripts/build-mac.sh --test   # 自动选择已安装的 iPhone 模拟器�
 
 工程已包含 11 个单元测试与 1 个 UI 测试。修改 Swift 文件列表后，使用 `python3 scripts/generate_xcode_project.py` 重新生成工程。
 
-**本机执行记录：**Windows 上后端 27 项测试通过；Swift 语法树扫描、Xcode 工程结构、plist、scheme 与资源引用检查通过。Windows 没有 Xcode，**尚未编译 iOS 二进制、运行模拟器或安装真机**。`docs/验证记录.md` 记录具体范围；发布前执行 `docs/发布检查.md`。
+GitHub 私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。推送 main 自动运行云端构建；配置与产物使用见 `docs/云端构建.md`。
+
+**验证结果：**Windows 上后端 27 项测试通过；云端 Mac 已完成 Xcode 16.4 / iOS 18.5 模拟器真实编译，11 个单元测试＋1 个 UI 测试全部通过，并生成模拟器 App。[查看成功运行](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43048093223)。真机、签名 IPA 和 TestFlight 尚未执行。`docs/验证记录.md` 记录具体范围；发布前执行 `docs/发布检查.md`。
 
 ## 工程目录
 
