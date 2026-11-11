@@ -2,7 +2,15 @@
 
 基于《如愿美学 iOS 测肤 App 技术方案（2026-11-10）》生成的**首版可开发工程**。SwiftUI 原生界面，最低 iOS 17，仅 iPhone 竖屏；不是网页套壳。工程独立保存在本目录。
 
-## 在 Mac 上打开
+## Windows 电脑 + 自己的 iPhone（主路径）
+
+1. 在 [iPhone 真机云端构建](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/workflows/ios-device.yml) 下载成功运行中的 `Ruyuan-iPhone-Unsigned-运行编号-尝试编号` 产物，解压外层 ZIP 取出 `.ipa`。
+2. 用 Windows 本地签名工具和你自己的 Apple ID 签名，通过 USB 安装到 iOS 17 及以上的 iPhone；无需先购买开发者会员。
+3. 按 [iPhone 安装指南](docs/iPhone安装.md) 完成电脑信任、本人账号信任及开发者模式。账号密码只在你自己的电脑输入，不提供给助理或仓库。
+
+**未签名 IPA 不能直接点击安装。** 云端只负责真机程序编译与打包，不会替你连接手机或完成签名。[本次真机云编译成功运行](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43052667325)；签名安装及真实手机测试仍未执行。
+
+## 有 Mac 时打开工程（可选）
 
 1. 将整个文件夹复制到 Mac。安装并打开完整 Xcode 16 或更新版本，完成首次组件安装。
 2. 双击 **`iOS/Ruyuan.xcodeproj`**。
@@ -37,18 +45,19 @@
 
 ## 构建与测试
 
-Mac 终端在本目录运行：
+GitHub 私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。推送 `main` 且改动 iOS 源码、真机构建脚本或真机工作流时，自动构建 **iPhone 未签名 IPA**，也可手动运行。模拟器 XCTest 保留为手动运行，不再随 push 自动触发；见 [云端构建说明](docs/云端构建.md)。
+
+Mac 终端可在本目录复现：
 
 ```bash
+bash scripts/ci-ios-device.sh      # 真机 Release 未签名 IPA，仍需本地签名安装
 bash scripts/build-mac.sh          # 无签名模拟器构建
 bash scripts/build-mac.sh --test   # 自动选择已安装的 iPhone 模拟器运行 XCTest
 ```
 
 工程已包含 11 个单元测试与 1 个 UI 测试。修改 Swift 文件列表后，使用 `python3 scripts/generate_xcode_project.py` 重新生成工程。
 
-GitHub 私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。推送 main 自动运行云端构建；配置与产物使用见 `docs/云端构建.md`。
-
-**验证结果：**Windows 上后端 27 项测试通过；云端 Mac 已完成 Xcode 16.4 / iOS 18.5 模拟器真实编译，11 个单元测试＋1 个 UI 测试全部通过，并生成模拟器 App。[查看成功运行](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43048093223)。真机、签名 IPA 和 TestFlight 尚未执行。`docs/验证记录.md` 记录具体范围；发布前执行 `docs/发布检查.md`。
+**验证结果：**[真机未签名 IPA 云编译成功](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43052667325)，commit `a85391f374935bcba5058eebceae4632b7ebff09`，含编译、二进制/包校验及产物上传。Windows 后端 27 项测试通过；既有云端 Xcode 16.4 / iOS 18.5 模拟器编译及 11 单元＋1 UI 测试全部通过，[原成功记录保留](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43048093223)。签名安装、真实手机/相机验收及 TestFlight 尚未执行。`docs/验证记录.md` 记录具体范围；发布前执行 `docs/发布检查.md`。
 
 ## 工程目录
 
