@@ -1,0 +1,49 @@
+name: iPhone Unsigned IPA Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'iOS/**'
+      - 'scripts/ci-ios-device.sh'
+      - '.github/workflows/ios-device.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iphone:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile actual iPhone arm64 app and package unsigned IPA
+        shell: bash
+        env:
+          CI_ARTIFACTS_DIR: ${{ runner.temp }}/ruyuan-iphone-ci
+        run: bash scripts/ci-ios-device.sh
+
+      - name: Upload unsigned IPA and build evidence even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Ruyuan-iPhone-Unsigned-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ruyuan-iphone-ci/Ruyuan-iPhone-Unsigned.ipa
+            ${{ runner.temp }}/ruyuan-iphone-ci/*.log
+            ${{ runner.temp }}/ruyuan-iphone-ci/*.txt
+            ${{ runner.temp }}/ruyuan-iphone-ci/*.xcresult.zip
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0

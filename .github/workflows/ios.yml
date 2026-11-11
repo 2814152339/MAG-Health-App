@@ -1,8 +1,6 @@
 name: iOS Simulator Build & Test
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
