@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 
 /// Uses only the bundled vector illustration and explicitly synthetic sample data.
 /// Never imports a photo, opens the camera, or sends personal data to a server.
@@ -142,10 +143,10 @@ final class RuyuanUITests: XCTestCase {
         let tab = identified("detail-tab-\(dimension)", in: app)
         if !reveal(tab, in: app, maximumSwipes: 10) {
             // Also handles a horizontally scrolling tab strip on narrower devices.
-            for _ in 0..<3 where !tab.isHittable { visibleScroll(in: app).swipeLeft() }
-            for _ in 0..<3 where !tab.isHittable { visibleScroll(in: app).swipeRight() }
+            for _ in 0..<3 where !isReachable(tab, in: app) { visibleScroll(in: app).swipeLeft() }
+            for _ in 0..<3 where !isReachable(tab, in: app) { visibleScroll(in: app).swipeRight() }
         }
-        XCTAssertTrue(tab.exists && tab.isHittable, "Cannot reach detail tab \(dimension).")
+        XCTAssertTrue(isReachable(tab, in: app), "Cannot reach detail tab \(dimension).")
         tab.tap()
         XCTAssertTrue(waitUntil { tab.isSelected }, "The selected dimension must be exposed to accessibility.")
     }
@@ -155,27 +156,77 @@ final class RuyuanUITests: XCTestCase {
     }
 
     private func visibleScroll(in app: XCUIApplication) -> XCUIElement {
-        let detail = identified("reportDetailSheet", in: app)
-        if detail.exists {
-            if detail.elementType == .scrollView && detail.isHittable { return detail }
-            if let scroll = detail.scrollViews.allElementsBoundByIndex.first(where: { $0.isHittable }) { return scroll }
+        // SwiftUI can propagate a container ID to its header children. Select
+        // the scroll view itself rather than the first text with the same ID.
+        for identifier in ["reportDetailSheet", "reportOverview"] {
+            let scroll = app.scrollViews.matching(identifier: identifier).firstMatch
+            if scroll.exists && scroll.isHittable { return scroll }
         }
         if let scroll = app.scrollViews.allElementsBoundByIndex.first(where: { $0.isHittable }) { return scroll }
         return app
     }
 
+    private func homeDockIsActive(in app: XCUIApplication) -> Bool {
+        // Underlying home elements may remain in the AX tree behind a sheet.
+        guard !identified("reportOverview", in: app).exists,
+              !identified("reportDetailSheet", in: app).exists else { return false }
+        return identified("captureActionDock", in: app).exists
+    }
+
+    private func unobscuredViewport(in app: XCUIApplication) -> CGRect {
+        var viewport = visibleScroll(in: app).frame.intersection(app.frame)
+        if homeDockIsActive(in: app) {
+            let dock = identified("captureActionDock", in: app)
+            let blockers = [dock] + app.tabBars.allElementsBoundByIndex
+            for blocker in blockers where blocker.exists {
+                let frame = blocker.frame
+                if frame.intersects(viewport) && frame.minY > viewport.minY {
+                    viewport.size.height = max(0, min(viewport.maxY, frame.minY) - viewport.minY)
+                }
+            }
+        }
+        return viewport
+    }
+
+    private func isReachable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        guard element.exists && element.isHittable else { return false }
+        let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
+        // isHittable alone incorrectly reported true for the offscreen sample
+        // row whose center was underneath the fixed CTA dock / system tab bar.
+        return unobscuredViewport(in: app).contains(center)
+    }
+
+    private func scrollVertically(in app: XCUIApplication, up: Bool) {
+        let scroll = visibleScroll(in: app)
+        guard homeDockIsActive(in: app) else {
+            if up { scroll.swipeUp() } else { scroll.swipeDown() }
+            return
+        }
+        let viewport = unobscuredViewport(in: app)
+        guard !viewport.isEmpty && !viewport.isNull else { return }
+        // Perform an ordinary scroll gesture within the visible scroll content;
+        // starting a stock full-frame swipe inside the dock hits its buttons.
+        // The subsequent button action remains the normal element.tap().
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        let x = viewport.midX - app.frame.minX
+        let startY = viewport.minY + viewport.height * (up ? 0.8 : 0.2) - app.frame.minY
+        let endY = viewport.minY + viewport.height * (up ? 0.2 : 0.8) - app.frame.minY
+        origin.withOffset(CGVector(dx: x, dy: startY)).press(forDuration: 0.05,
+            thenDragTo: origin.withOffset(CGVector(dx: x, dy: endY)))
+    }
+
     @discardableResult
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, maximumSwipes: Int = 12) -> Bool {
-        if element.exists && element.isHittable { return true }
+        if isReachable(element, in: app) { return true }
         for _ in 0..<maximumSwipes {
-            visibleScroll(in: app).swipeUp()
-            if element.exists && element.isHittable { return true }
+            scrollVertically(in: app, up: true)
+            if isReachable(element, in: app) { return true }
         }
         for _ in 0..<maximumSwipes {
-            visibleScroll(in: app).swipeDown()
-            if element.exists && element.isHittable { return true }
+            scrollVertically(in: app, up: false)
+            if isReachable(element, in: app) { return true }
         }
-        return element.exists && element.isHittable
+        return isReachable(element, in: app)
     }
 
     private func waitUntil(timeout: TimeInterval = 5, _ condition: @escaping () -> Bool) -> Bool {

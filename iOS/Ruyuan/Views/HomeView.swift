@@ -31,6 +31,8 @@ struct HomeView: View {
                     .padding(.bottom, 10)
                     .background(RuyuanStyle.background.opacity(0.98))
                     .overlay(alignment: .top) { RuyuanStyle.line.frame(height: 0.5) }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("captureActionDock")
             }
         }
         .background(RuyuanStyle.background)
