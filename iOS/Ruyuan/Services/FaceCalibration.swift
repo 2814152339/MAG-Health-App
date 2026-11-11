@@ -3,13 +3,23 @@ import Foundation
 /// Optional, user-confirmed calibration. The original landmark/appearance evidence is retained.
 enum FaceCalibration {
     static func applying(to source:AnalysisReport,hairlineY:Double?,pupilDistanceMM:Double?) throws -> AnalysisReport {
+        let hairlineY = hairlineY ?? source.calibration?.hairlineY
+        let pupilDistanceMM = pupilDistanceMM ?? source.calibration?.pupilDistanceMM
         guard hairlineY != nil || pupilDistanceMM != nil else { throw AnalysisError.poorQuality("请先在照片上标记发际线，或填写本人实测瞳距。") }
-        let paths=Dictionary(uniqueKeysWithValues:source.landmarks.map{($0.id,$0.points)})
+        var paths:[String:[NormalizedPoint]]=[:]
+        for path in source.landmarks {
+            guard paths[path.id] == nil else {throw AnalysisError.poorQuality("报告点位名称重复，请重新生成这份报告后再标定。")}
+            paths[path.id]=path.points
+        }
         func mean(_ key:String)->NormalizedPoint? {
             guard let p=paths[key],!p.isEmpty else{return nil}
-            return .init(x:p.map(\.x).reduce(0,+)/Double(p.count),y:p.map(\.y).reduce(0,+)/Double(p.count))
+            let count=Double(p.count)
+            let sumX:Double=p.reduce(0.0) { $0 + $1.x }
+            let sumY:Double=p.reduce(0.0) { $0 + $1.y }
+            return NormalizedPoint(x:sumX/count,y:sumY/count)
         }
         var report=source
+        report.calibration=CalibrationInputs(hairlineY:hairlineY,pupilDistanceMM:pupilDistanceMM)
         report.geometry.removeAll{$0.id.hasPrefix("calibrated-")}
         report.overlays.removeAll{$0.id == "geometry-user-calibration"}
         var lines:[[NormalizedPoint]]=[]

@@ -35,7 +35,7 @@ struct FaceCalibrationView:View {
                 HStack {
                     Text(hairlineY == nil ? "尚未标记发际线":"已标记；可再次轻点调整").font(.caption).foregroundStyle(RuyuanStyle.muted)
                     Spacer()
-                    Button("清除标记"){hairlineY=nil}.font(.caption)
+                    Button("重置本次标记"){hairlineY=nil}.font(.caption)
                 }
                 VStack(alignment:.leading,spacing:10) {
                     Text("本人实测瞳距（可选）").font(.subheadline.weight(.semibold))
@@ -51,7 +51,8 @@ struct FaceCalibrationView:View {
                         let text=pupilDistance.trimmingCharacters(in:.whitespaces)
                         let mm=text.isEmpty ? nil:Double(text)
                         if !text.isEmpty && mm == nil {throw AnalysisError.poorQuality("请输入实测瞳距数字，或留空。")}
-                        let calibrated=try FaceCalibration.applying(to:report,hairlineY:hairlineY,pupilDistanceMM:mm)
+                        let current=store.reports.first{$0.id == report.id} ?? report
+                        let calibrated=try FaceCalibration.applying(to:current,hairlineY:hairlineY,pupilDistanceMM:mm)
                         try store.saveCalibratedReport(calibrated)
                         error=nil;saved=true
                     } catch {self.error=error.localizedDescription}
@@ -59,5 +60,9 @@ struct FaceCalibrationView:View {
                 if report.isSample {Text("演示报告不允许保存本人标定，请使用自己拍摄的照片。").font(.caption).foregroundStyle(RuyuanStyle.muted)}
             }.padding(20)
         }.background(RuyuanStyle.background).navigationTitle("手动标定").navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                hairlineY=report.calibration?.hairlineY
+                if let mm=report.calibration?.pupilDistanceMM {pupilDistance=String(format:"%.1f",mm)}
+            }
     }
 }

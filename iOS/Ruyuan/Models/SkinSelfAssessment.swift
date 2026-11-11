@@ -26,7 +26,7 @@ struct SkinSelfAssessment: Codable, Sendable {
                     updated.scoreSource = "selfReport"
                     updated.status = "肤感自评参考分 · 非仪器水油测量"
                 }
-                updated.items.removeAll { $0.id.hasPrefix("self-") || $0.id == "hydration" }
+                updated.items.removeAll { $0.id.hasPrefix("self-") }
                 updated.items += [
                     SkinItem(id: "self-dryness", title: "水分与干燥感", valueText: Self.frequency[dryness], note: "你自述洗脸后的紧绷或干燥频率。不是照片含水量测量；有紧绷时先减少过度清洁，使用温和保湿。", overlayID: nil),
                     SkinItem(id: "self-oiliness", title: "日常出油感", valueText: Self.frequency[oiliness], note: "你自述洗脸约两小时后 T 区明显出油的频率。参考分 = 100 − 干燥等级×12 − 出油等级×10；为本 App 的透明整理规则，不是人群常模。", overlayID: nil)
@@ -38,7 +38,7 @@ struct SkinSelfAssessment: Codable, Sendable {
                     updated.scoreSource = "selfReport"
                     updated.status = "耐受感自评参考分 · 非敏感诊断"
                 }
-                updated.items.removeAll { $0.id.hasPrefix("self-") || $0.id == "barrier" }
+                updated.items.removeAll { $0.id.hasPrefix("self-") }
                 updated.items.append(SkinItem(id: "self-reactivity", title: "日常刺激反应", valueText: Self.frequency[reactivity], note: "你自述使用日常护肤品后刺痛或泛红的频率；参考分 = 100 − 自述等级×22，高分表示较少自述不适。无法据此判断过敏或皮肤屏障；反复不适时停止可疑刺激并咨询专业人员。", overlayID: nil))
             }
             return updated

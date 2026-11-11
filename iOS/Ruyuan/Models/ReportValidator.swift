@@ -21,6 +21,7 @@ enum ReportValidator {
         guard paths.count <= 10000,
               paths.reduce(0, { $0 + $1.count }) <= 100000,
               paths.flatMap({ $0 }).allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }),
+              Set(report.landmarks.map(\.id)).count == report.landmarks.count,
               Set(report.geometry.map(\.id)).count == report.geometry.count,
               Set(report.overlays.map(\.id)).count == report.overlays.count else { throw invalid() }
     }

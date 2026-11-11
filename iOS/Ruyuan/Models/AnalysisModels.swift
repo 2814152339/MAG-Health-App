@@ -94,6 +94,11 @@ struct QualityCheck: Codable, Identifiable, Sendable {
     var detail: String
 }
 
+struct CalibrationInputs: Codable, Sendable {
+    var hairlineY: Double?
+    var pupilDistanceMM: Double?
+}
+
 struct AnalysisReport: Codable, Identifiable, Sendable {
     var id: String
     var createdAt: Date
@@ -110,6 +115,7 @@ struct AnalysisReport: Codable, Identifiable, Sendable {
     var modelVersion: String
     var summary: String
     var assessment: SkinSelfAssessment? = nil
+    var calibration: CalibrationInputs? = nil
     var totalScore: Double? {
         let scores = skin.compactMap(\.score)
         guard scores.count == SkinDimension.allCases.count else { return nil }

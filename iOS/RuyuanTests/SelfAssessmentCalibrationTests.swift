@@ -61,6 +61,19 @@ final class SelfAssessmentCalibrationTests:XCTestCase {
         XCTAssertEqual(next.landmarks.map(\.id),original.landmarks.map(\.id))
         XCTAssertEqual(next.landmarks.map(\.points),original.landmarks.map(\.points))
     }
+    func testAddingHairlinePreservesEarlierMeasuredScale() throws {
+        let first=try FaceCalibration.applying(to:calibrationReport,hairlineY:nil,pupilDistanceMM:64)
+        let second=try FaceCalibration.applying(to:first,hairlineY:0.1,pupilDistanceMM:nil)
+        XCTAssertEqual(second.calibration?.pupilDistanceMM,64)
+        XCTAssertEqual(second.geometry.filter{$0.id.hasSuffix("-mm")}.count,first.geometry.filter{$0.id.hasSuffix("-mm")}.count)
+        XCTAssertEqual(second.geometry.filter{$0.id.hasPrefix("calibrated-") && $0.unit == "%"}.count,3)
+    }
+    func testDuplicateLandmarkNamesAreRejectedWithoutTrapping() {
+        var report=calibrationReport
+        report.landmarks.append(report.landmarks[0])
+        XCTAssertThrowsError(try ReportValidator.validate(report))
+        XCTAssertThrowsError(try FaceCalibration.applying(to:report,hairlineY:0.1,pupilDistanceMM:nil))
+    }
     func testMillimetersRequireExplicitValidMeasuredPupilScale() throws {
         let next=try FaceCalibration.applying(to:calibrationReport,hairlineY:nil,pupilDistanceMM:64)
         let value=try XCTUnwrap(next.geometry.first{$0.id == "calibrated-faceContour-mm"}?.value)
