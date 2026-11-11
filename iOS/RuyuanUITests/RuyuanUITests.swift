@@ -28,6 +28,16 @@ final class RuyuanUITests: XCTestCase {
         openSample(in: app)
         XCTAssertTrue(app.staticTexts["这是一份演示报告。分数、比例与图层均为示例，不代表你或任何真实人物的检测结果。"].exists)
         capture("report", app: app)
+        let photo = identified("reportOriginalPhoto", in: app)
+        XCTAssertTrue(reveal(photo, in: app))
+        photo.tap()
+        let photoNav = app.navigationBars["原图"]
+        XCTAssertTrue(photoNav.waitForExistence(timeout: 5))
+        XCTAssertTrue(identified("overlayViewer", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["原图"].firstMatch.isSelected)
+        capture("original-photo", app: app)
+        photoNav.buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["演示报告"].waitForExistence(timeout: 5))
         let done = app.navigationBars["演示报告"].buttons["完成"].firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         done.tap()

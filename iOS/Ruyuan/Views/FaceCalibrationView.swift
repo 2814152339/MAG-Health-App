@@ -60,6 +60,7 @@ struct FaceCalibrationView:View {
                 if report.isSample {Text("演示报告不允许保存本人标定，请使用自己拍摄的照片。").font(.caption).foregroundStyle(RuyuanStyle.muted)}
             }.padding(20)
         }.background(RuyuanStyle.background).navigationTitle("手动标定").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for:.navigationBar)
             .onAppear {
                 hairlineY=report.calibration?.hairlineY
                 if let mm=report.calibration?.pupilDistanceMM {pupilDistance=String(format:"%.1f",mm)}

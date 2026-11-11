@@ -141,6 +141,10 @@ struct OverlayView: View {
             .accessibilityIdentifier("overlayViewer")
             .navigationTitle(selectedLayer?.title ?? "原图")
             .navigationBarTitleDisplayMode(.inline)
+            // The presenting detail sheet hides its own navigation bar. A full
+            // screen viewer must override that inherited visibility preference;
+            // toolbarBackground(.visible) alone only affects the background.
+            .toolbar(.visible, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {

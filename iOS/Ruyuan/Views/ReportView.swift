@@ -108,6 +108,7 @@ struct ReportView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(report.isSample ? "查看演示示意图" : "查看本次原始照片")
+            .accessibilityIdentifier("reportOriginalPhoto")
         }
     }
 
