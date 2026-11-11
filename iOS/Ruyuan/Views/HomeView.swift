@@ -54,42 +54,30 @@ struct HomeView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 6) {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("YOUR BEAUTY, UNDERSTOOD")
-                        .font(.system(size: 9, weight: .medium)).tracking(1.4)
-                        .foregroundStyle(RuyuanStyle.purple)
-                    Text("看见自己，\n如愿而美。")
-                        .font(.system(.largeTitle, design: .serif, weight: .medium))
-                        .lineSpacing(6)
-                        .foregroundStyle(RuyuanStyle.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("从一张照片开始，\n了解面部比例与皮肤外观。")
-                        .font(.subheadline).lineSpacing(4)
-                        .foregroundStyle(RuyuanStyle.muted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                SampleFaceDiagram(showsGuides: true)
-                    .frame(width: 105, height: 172)
-                    .rotationEffect(.degrees(-5))
-                    .accessibilityHidden(true)
-            }
-            HStack(spacing: 8) {
-                Capsule().fill(RuyuanStyle.purple).frame(width: 18, height: 3)
-                Text("以观察理解美，不以数字定义你")
-                    .font(.caption).foregroundStyle(RuyuanStyle.purple)
-            }
-            Text("插画为示意，非真人分析结果")
-                .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+        VStack(spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text("AI").italic().foregroundStyle(RuyuanStyle.purple)
+                Text("测肤质").foregroundStyle(RuyuanStyle.ink)
+            }.font(.system(size: 39,weight:.heavy)).padding(.top, 18)
+            Text("看见肤质细节，了解面部比例")
+                .font(.subheadline).foregroundStyle(RuyuanStyle.muted)
+            ZStack {
+                Circle().fill(.white.opacity(0.5)).frame(width:250,height:250).offset(y:22)
+                Circle().stroke(.white.opacity(0.9),lineWidth:12).frame(width:230,height:270).offset(y:15)
+                SampleFaceDiagram(showsGuides:true).frame(width:200,height:280)
+                Text("检测肤质").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:-90,y:-30)
+                Text("面部比例分析").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:75,y:-83)
+                Text("皮肤外观评估").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:65,y:75)
+            }.frame(height:300).accessibilityHidden(true)
+            Text("油光 · 肤色 · 纹理 · 眼周 · 五官比例")
+                .font(.caption.weight(.medium)).foregroundStyle(.white)
+                .padding(.horizontal,16).padding(.vertical,10)
+                .background(RuyuanStyle.purple,in:Capsule())
+            Label("请在光线充足的环境中正脸居中拍摄",systemImage:"viewfinder")
+                .font(.caption2).foregroundStyle(RuyuanStyle.purple).padding(.top,12)
         }
-        .padding(23)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: "EEE7F2"), Color(hex: "F5EEEB")],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-        }
+        .frame(maxWidth:.infinity).padding(.horizontal,12).padding(.bottom,25)
+        .background(LinearGradient(colors:[Color(hex:"E6E0FF"),Color(hex:"F5F3FF")],startPoint:.topLeading,endPoint:.bottomTrailing),in:RoundedRectangle(cornerRadius:24))
     }
 
     private var captureActions: some View {
@@ -97,8 +85,8 @@ struct HomeView: View {
             Button(action: onCapture) {
                 HStack(spacing: 10) {
                     Image(systemName: "camera")
-                    Text("开始面部观察")
-                    Image(systemName: "arrow.up.right").font(.subheadline)
+                    Text("开始检测")
+                    Image(systemName: "arrow.right").font(.subheadline)
                 }
             }
             .buttonStyle(RuyuanPrimaryButtonStyle())

@@ -7,9 +7,9 @@ struct CameraView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = CameraService()
-    private let ink = Color(red: 0.24, green: 0.23, blue: 0.21)
-    private let accent = Color(red: 0.63, green: 0.49, blue: 0.36)
-    private let paper = Color(red: 0.97, green: 0.95, blue: 0.92)
+    private let ink = RuyuanStyle.ink
+    private let accent = Color(hex: "7775FF")
+    private let paper = Color(hex: "F5F3FC")
 
     init(onCapture: @escaping (UIImage) -> Void) { self.onCapture = onCapture }
 
@@ -44,8 +44,8 @@ struct CameraView: View {
             .accessibilityLabel("关闭相机")
             Spacer()
             VStack(spacing: 3) {
-                Text(camera.capturedImage == nil ? "留住此刻的你" : "确认这张照片")
-                    .font(.system(size: 19, weight: .medium, design: .serif))
+                Text(camera.capturedImage == nil ? "拍照测肤" : "确认这张照片")
+                    .font(.system(size: 19, weight: .semibold))
                 Text("如愿 · 美学记录")
                     .font(.system(size: 11))
                     .tracking(2)
@@ -71,14 +71,18 @@ struct CameraView: View {
                         VStack {
                             Spacer()
                             Ellipse()
-                                .stroke(.white.opacity(0.85), style: StrokeStyle(lineWidth: 1.2, dash: [7, 6]))
+                                .stroke(camera.isWellPositioned ? Color(hex: "7EE1B5") : .white.opacity(0.85),
+                                        style: StrokeStyle(lineWidth: camera.isWellPositioned ? 2.5 : 1.2, dash: [7, 6]))
                                 .frame(width: width, height: width * 1.32)
+                                .animation(.easeInOut(duration: 0.2), value: camera.isWellPositioned)
                             Spacer()
-                            Text("双眼平视镜头，五官完整露出")
+                            Label(camera.guidanceMessage, systemImage: camera.isWellPositioned ? "checkmark.circle.fill" : "viewfinder")
                                 .font(.system(size: 12, weight: .medium))
+                                .multilineTextAlignment(.center)
                                 .padding(.horizontal, 15).padding(.vertical, 9)
                                 .background(.black.opacity(0.35), in: Capsule())
-                                .foregroundStyle(.white)
+                                .foregroundStyle(camera.isWellPositioned ? Color(hex: "A9F1D0") : .white)
+                                .padding(.horizontal, 12)
                                 .padding(.bottom, 18)
                         }
                         .frame(maxWidth: .infinity)
@@ -97,6 +101,9 @@ struct CameraView: View {
                 Text("请竖屏拍摄；自拍预览会镜像，保存照片不会镜像")
                     .font(.system(size: 11))
                     .foregroundStyle(ink.opacity(0.58))
+                Text("实时定位仅作拍摄参考，不录制视频，也不限制手动拍摄")
+                    .font(.system(size: 10)).foregroundStyle(accent)
+                    .multilineTextAlignment(.center)
             }
             .foregroundStyle(ink)
             HStack {
@@ -105,7 +112,8 @@ struct CameraView: View {
                 Button { camera.capture() } label: {
                     ZStack {
                         Circle().stroke(accent.opacity(0.55), lineWidth: 2).frame(width: 76, height: 76)
-                        Circle().fill(accent).frame(width: 62, height: 62)
+                        Circle().fill(LinearGradient(colors: [accent, Color(hex: "9C82ED")], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 62, height: 62)
                         if camera.isCapturing { ProgressView().tint(.white) }
                     }
                 }
@@ -183,7 +191,7 @@ struct CameraView: View {
                 .background(ink.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 28))
                 .padding(.horizontal, 22)
-            Text("确认画面清晰、五官无遮挡，再开始本机分析。")
+            Text("确认画面清晰、五官无遮挡，再继续检测。")
                 .font(.system(size: 12))
                 .foregroundStyle(ink.opacity(0.65))
             HStack(spacing: 14) {

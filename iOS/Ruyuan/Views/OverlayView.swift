@@ -61,7 +61,7 @@ struct NormalizedOverlayDrawing: View {
                         }
                     } else {
                         let path = makePath(points, closed: layer.kind == .polygons, size: size)
-                        if layer.kind == .polygons { context.fill(path, with: .color(color.opacity(0.25))) }
+                        if layer.kind == .polygons { context.fill(path, with: .color(color.opacity(0.32))) }
                         context.stroke(path, with: .color(color),
                                        style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
                     }
@@ -134,10 +134,11 @@ struct OverlayView: View {
                 zoomablePhoto
                 controls
             }
-            .background(Color(hex: "211D25"))
-            .navigationTitle(selectedLayer?.title ?? "面部特征与原图")
+            .background(.black)
+            .accessibilityIdentifier("overlayViewer")
+            .navigationTitle(selectedLayer?.title ?? "原图")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color(hex: "211D25"), for: .navigationBar)
+            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -152,7 +153,8 @@ struct OverlayView: View {
         }
         .onAppear {
             selectedLayerID = initialLayerID
-            showLandmarks = initialLayerID == nil && !report.landmarks.isEmpty
+            showOverlay = initialLayerID != nil
+            showLandmarks = false
         }
     }
 
@@ -198,29 +200,47 @@ struct OverlayView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
+            if let layer = selectedLayer, showOverlay {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 7) {
+                        Circle().fill(Color(hex: layer.colorHex)).frame(width: 7, height: 7)
+                        Text(layer.title).font(.caption.weight(.semibold))
+                        Spacer()
+                        Text(report.isSample ? "演示图层" : "照片外观参考")
+                            .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
+                    }.foregroundStyle(RuyuanStyle.ink)
+                    Text(layer.note).font(.caption2).lineSpacing(3).foregroundStyle(RuyuanStyle.muted)
+                        .lineLimit(3)
+                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            }
             Picker("显示模式", selection: $showOverlay) {
                 Text("原图").tag(false)
                 Text(report.isSample ? "演示标注" : "分析标注").tag(true)
             }
             .pickerStyle(.segmented)
-            HStack(spacing: 10) {
-                if !report.overlays.isEmpty {
-                    Menu {
+            if !report.overlays.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
                         ForEach(report.overlays) { layer in
                             Button {
-                                selectedLayerID = layer.id
-                                showOverlay = true
+                                selectedLayerID = layer.id; showOverlay = true; showLandmarks = false
+                                resetZoom()
                             } label: {
-                                if selectedLayerID == layer.id { Label(layer.title, systemImage: "checkmark") }
-                                else { Text(layer.title) }
-                            }
+                                HStack(spacing: 5) {
+                                    Circle().fill(Color(hex: layer.colorHex)).frame(width: 5, height: 5)
+                                    Text(layer.title).font(.caption2)
+                                }.padding(.horizontal, 11).padding(.vertical, 9)
+                                    .foregroundStyle(.white)
+                                    .background(selectedLayerID == layer.id ? RuyuanStyle.purple : .white.opacity(0.12), in: Capsule())
+                            }.buttonStyle(.plain)
+                                .accessibilityAddTraits(selectedLayerID == layer.id ? .isSelected : [])
                         }
-                    } label: {
-                        Label(selectedLayer?.title ?? "选择图层", systemImage: "square.3.layers.3d")
-                            .font(.caption.weight(.medium)).lineLimit(2)
                     }
                 }
+            }
+            HStack(spacing: 10) {
                 if !report.landmarks.isEmpty {
                     Button {
                         showLandmarks.toggle()
@@ -232,24 +252,26 @@ struct OverlayView: View {
                     .accessibilityLabel(showLandmarks ? "隐藏面部特征点" : "显示面部特征点")
                 }
                 Spacer(minLength: 0)
+                Text("\(Int(scale * 100))%")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
                 Button { stepZoom(-0.5) } label: { Image(systemName: "minus.magnifyingglass") }
                     .accessibilityLabel("缩小图像").frame(width: 34, height: 36)
                 Button { stepZoom(0.5) } label: { Image(systemName: "plus.magnifyingglass") }
                     .accessibilityLabel("放大图像").frame(width: 34, height: 36)
             }
             .foregroundStyle(Color(hex: "E4D1F0"))
-            if let layer = selectedLayer {
+            if let layer = selectedLayer, showOverlay {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(layer.note).font(.caption).foregroundStyle(.white.opacity(0.8))
                     Text("来源：\(report.isSample ? "原创矢量交互示例" : layer.source)")
-                        .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                        .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
                 }
                 .fixedSize(horizontal: false, vertical: true)
             } else if report.landmarks.isEmpty && report.overlays.isEmpty {
                 Text("此报告未提供可显示的特征点或图层。")
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
             } else if selectedLayer == nil && !showLandmarks {
-                Text("当前显示原图，可从图层菜单选择对应标注。")
+                Text("当前显示原图，可从上方图层条选择对应标注。")
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
             }
             Text("双指缩放 · 拖动查看 · 双击重置")
@@ -257,7 +279,7 @@ struct OverlayView: View {
                 .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 20).padding(.vertical, 18)
-        .background(Color(hex: "2C2632"))
+        .background(.black)
     }
 
     private func bounded(_ value: CGSize, scale: CGFloat, fitted: CGSize, bounds: CGSize) -> CGSize {

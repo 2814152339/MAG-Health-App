@@ -1,6 +1,9 @@
 import AVFoundation
 import Combine
+import CoreMedia
+import CoreVideo
 import UIKit
+import Vision
 
 /// AVCaptureSession mutations and blocking start/stop calls stay on sessionQueue.
 /// Published values are only written on the main queue. This app captures portrait photos.
@@ -13,9 +16,15 @@ final class CameraService: NSObject, ObservableObject {
     @Published private(set) var position: AVCaptureDevice.Position = .front
     @Published private(set) var capturedImage: UIImage?
     @Published private(set) var errorMessage: String?
+    @Published private(set) var guidanceMessage = "将面部放在画面中央，正对镜头"
+    @Published private(set) var isWellPositioned = false
 
     private let sessionQueue = DispatchQueue(label: "com.ruyuan.camera.session", qos: .userInitiated)
+    private let visionQueue = DispatchQueue(label: "com.ruyuan.camera.guidance", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let guidanceProcessor = FrameGuidanceProcessor()
+    private var guidanceAvailable = false // Owned by sessionQueue, never read by the frame queue.
     private var input: AVCaptureDeviceInput?
     private var configured = false
     private var wantsRunning = false
@@ -27,6 +36,14 @@ final class CameraService: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        guidanceProcessor.onResult = { [weak self] result, generation in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.guidanceProcessor.isCurrent(generation), self.isRunning,
+                      !self.isCapturing, !self.isSwitching, self.capturedImage == nil else { return }
+                self.guidanceMessage = result.message
+                self.isWellPositioned = result.ready
+            }
+        }
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: AVCaptureSession.runtimeErrorNotification,
             object: session, queue: nil) { [weak self] notification in
@@ -36,8 +53,10 @@ final class CameraService: NSObject, ObservableObject {
                     if error?.code == .mediaServicesWereReset, self.wantsRunning, !self.reviewingPhoto {
                         self.startConfiguredSession()
                     } else {
+                        self.guidanceProcessor.suspend()
                         self.publish { camera in
                             camera.isRunning = false
+                            camera.isWellPositioned = false
                             camera.errorMessage = "相机运行中断，请关闭相机后重新打开。"
                         }
                     }
@@ -45,8 +64,10 @@ final class CameraService: NSObject, ObservableObject {
             })
         observers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification,
             object: session, queue: nil) { [weak self] _ in
+                self?.guidanceProcessor.suspend()
                 self?.publish { camera in
                     camera.isRunning = false
+                    camera.isWellPositioned = false
                     camera.errorMessage = "相机被其他任务占用或暂时中断，恢复后可重试。"
                 }
             })
@@ -61,10 +82,13 @@ final class CameraService: NSObject, ObservableObject {
 
     deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+        guidanceProcessor.suspend()
         // The view may disappear before an enqueued weak-self stop executes.
         let captureSession = session
+        let frames = videoOutput
         sessionQueue.async {
             if captureSession.isRunning { captureSession.stopRunning() }
+            frames.setSampleBufferDelegate(nil, queue: nil)
         }
     }
 
@@ -100,11 +124,13 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     func stop() {
+        guidanceProcessor.suspend() // Invalidates an in-flight result before the queued stop.
         let captureSession = session
         sessionQueue.async { [weak self, captureSession] in
             self?.wantsRunning = false
+            self?.guidanceProcessor.suspend()
             if captureSession.isRunning { captureSession.stopRunning() }
-            self?.publish { $0.isRunning = false }
+            self?.publish { camera in camera.isRunning = false; camera.isWellPositioned = false }
         }
     }
 
@@ -117,6 +143,7 @@ final class CameraService: NSObject, ObservableObject {
         publish { camera in
             camera.capturedImage = nil
             camera.errorMessage = nil
+            camera.isWellPositioned = false
         }
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -136,6 +163,7 @@ final class CameraService: NSObject, ObservableObject {
                 return
             }
             self.publish { $0.isSwitching = true }
+            self.guidanceProcessor.suspend()
             do {
                 let nextInput = try AVCaptureDeviceInput(device: device)
                 self.session.beginConfiguration()
@@ -149,7 +177,9 @@ final class CameraService: NSObject, ObservableObject {
                 } else if self.session.canAddInput(oldInput) {
                     self.session.addInput(oldInput)
                 }
+                self.configureGuidanceConnection()
                 self.session.commitConfiguration()
+                self.startLiveGuidance()
                 self.publish { camera in
                     camera.isSwitching = false
                     if accepted {
@@ -160,6 +190,7 @@ final class CameraService: NSObject, ObservableObject {
                     }
                 }
             } catch {
+                self.startLiveGuidance()
                 self.publish { camera in
                     camera.isSwitching = false
                     camera.errorMessage = "无法打开另一侧摄像头，请重试。"
@@ -174,8 +205,10 @@ final class CameraService: NSObject, ObservableObject {
             guard self.configured, self.session.isRunning, !self.session.isInterrupted,
                   !self.captureInFlight, !self.reviewingPhoto else { return }
             self.captureInFlight = true
+            self.guidanceProcessor.suspend()
             self.publish { camera in
                 camera.isCapturing = true
+                camera.isWellPositioned = false
                 camera.errorMessage = nil
             }
             self.configurePhotoConnection()
@@ -198,6 +231,7 @@ final class CameraService: NSObject, ObservableObject {
                             camera.isRunning = false
                         }
                     case .failure:
+                        self.startLiveGuidance()
                         self.publish { camera in
                             camera.isCapturing = false
                             camera.errorMessage = "照片拍摄失败，请保持设备稳定后重试。"
@@ -239,9 +273,17 @@ final class CameraService: NSObject, ObservableObject {
         }
         session.addOutput(photoOutput)
         photoOutput.maxPhotoQualityPrioritization = .quality
+        // Preview frames exist only transiently in memory; there is no movie/file output.
+        // Guidance is optional: an unsupported data output must not break still capture.
+        if session.canAddOutput(videoOutput) {
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            session.addOutput(videoOutput)
+            videoOutput.setSampleBufferDelegate(guidanceProcessor, queue: visionQueue)
+        }
         input = newInput
         configureDevice(device)
         configurePhotoConnection()
+        configureGuidanceConnection()
         configured = true
         publish { $0.position = device.position }
     }
@@ -257,6 +299,7 @@ final class CameraService: NSObject, ObservableObject {
         }
         if !session.isRunning { session.startRunning() }
         let running = session.isRunning
+        if running { startLiveGuidance() } else { guidanceProcessor.suspend() }
         publish { camera in
             camera.isRunning = running
             camera.errorMessage = running ? nil : "相机未能启动，请检查是否被其他应用占用。"
@@ -270,6 +313,38 @@ final class CameraService: NSObject, ObservableObject {
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = false
+        }
+    }
+
+    private func configureGuidanceConnection() {
+        guidanceAvailable = false
+        guard let connection = videoOutput.connection(with: .video) else { return }
+        // Supported buffer formats can change after switching capture devices.
+        let formats = videoOutput.availableVideoPixelFormatTypes
+        if formats.contains(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        } else if formats.contains(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
+        } else { videoOutput.videoSettings = [:] }
+        // Physically rotate data buffers upright. Do not guess front/back EXIF mappings.
+        // If a device cannot do this, still capture stays available without live guidance.
+        if connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+            guidanceAvailable = true
+        }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+    }
+
+    private func startLiveGuidance() {
+        guard wantsRunning, !reviewingPhoto, !captureInFlight else { return }
+        if guidanceAvailable { guidanceProcessor.begin() } else { guidanceProcessor.suspend() }
+        let available = guidanceAvailable
+        publish { camera in
+            camera.isWellPositioned = false
+            camera.guidanceMessage = available ? "将面部放在画面中央，正对镜头" : "实时定位暂不可用，仍可手动拍摄"
         }
     }
 
@@ -300,6 +375,99 @@ final class CameraService: NSObject, ObservableObject {
             case .configuration: return "相机配置失败，请关闭后重新打开。"
             case .invalidPhoto: return "拍摄的照片无法读取，请重拍。"
             }
+        }
+    }
+
+    private struct FrameGuidance: Sendable {
+        let message: String
+        let ready: Bool
+    }
+
+    /// Synchronous Vision work stays on a dedicated serial callback queue. Only a small
+    /// summary crosses to the UI; sample buffers, crops and face observations are not retained.
+    private final class FrameGuidanceProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+        var onResult: ((FrameGuidance, UInt64) -> Void)? // Set once before attaching the output.
+        private let stateLock = NSLock()
+        private var enabled = false
+        private var generation: UInt64 = 0
+        private var lastAnalysisTime = -Double.infinity // Frame-queue owned.
+        private var previousGeneration: UInt64 = 0
+        private var readyStreak = 0
+
+        func begin() {
+            stateLock.lock()
+            generation &+= 1
+            enabled = true
+            stateLock.unlock()
+        }
+        func suspend() {
+            stateLock.lock()
+            generation &+= 1
+            enabled = false
+            stateLock.unlock()
+        }
+        func isCurrent(_ token: UInt64) -> Bool {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return enabled && generation == token
+        }
+        private func currentGeneration() -> UInt64? {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return enabled ? generation : nil
+        }
+
+        func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+            let started = ProcessInfo.processInfo.systemUptime
+            guard started - lastAnalysisTime >= 0.4, let token = currentGeneration(),
+                  CMSampleBufferDataIsReady(sampleBuffer), let image = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            lastAnalysisTime = started
+            if previousGeneration != token { readyStreak = 0; previousGeneration = token }
+            let result: FrameGuidance = autoreleasepool {
+                do {
+                    let request = VNDetectFaceRectanglesRequest()
+                    request.revision = VNDetectFaceRectanglesRequestRevision3
+                    try VNImageRequestHandler(cvPixelBuffer: image, orientation: .up, options: [:]).perform([request])
+                    return Self.assess(request.results ?? [])
+                } catch {
+                    // Vision is advisory, not a permission gate or a reason to disable the shutter.
+                    return FrameGuidance(message: "暂未稳定定位，正对镜头后仍可手动拍摄", ready: false)
+                }
+            }
+            guard isCurrent(token) else { return }
+            guard ProcessInfo.processInfo.systemUptime - started <= 0.9 else {
+                readyStreak = 0
+                onResult?(FrameGuidance(message: "实时定位较慢，仍可手动拍摄", ready: false), token)
+                return // Discard the stale face result, never queue old detections for display.
+            }
+            readyStreak = result.ready ? min(readyStreak + 1, 2) : 0
+            if result.ready && readyStreak < 2 {
+                onResult?(FrameGuidance(message: "位置合适，请保持片刻", ready: false), token)
+            } else { onResult?(result, token) }
+        }
+
+        private static func assess(_ faces: [VNFaceObservation]) -> FrameGuidance {
+            guard !faces.isEmpty else { return FrameGuidance(message: "请将面部放入画面中央", ready: false) }
+            guard faces.count == 1 else { return FrameGuidance(message: "画面中有多人，请只保留一张脸", ready: false) }
+            let face = faces[0], box = face.boundingBox
+            guard face.confidence >= 0.55, box.width > 0, box.height > 0 else {
+                return FrameGuidance(message: "面部定位不稳定，请正对镜头", ready: false)
+            }
+            if box.width < 0.22 || box.height < 0.30 { return FrameGuidance(message: "请稍微靠近镜头", ready: false) }
+            if box.width > 0.75 || box.height > 0.80 || box.minX < 0.025 || box.maxX > 0.975 || box.minY < 0.025 || box.maxY > 0.975 {
+                return FrameGuidance(message: "请稍微远离镜头，保留完整面部", ready: false)
+            }
+            if abs(box.midX - 0.5) > 0.14 || abs(box.midY - 0.5) > 0.17 {
+                return FrameGuidance(message: "请将面部移到画面中央", ready: false)
+            }
+            guard let yaw = face.yaw?.doubleValue, let roll = face.roll?.doubleValue, let pitch = face.pitch?.doubleValue,
+                  yaw.isFinite, roll.isFinite, pitch.isFinite else {
+                return FrameGuidance(message: "居中与距离合适，请正对镜头拍摄", ready: false)
+            }
+            if abs(yaw) > 0.22 { return FrameGuidance(message: "请正对镜头，减少左右侧转", ready: false) }
+            if abs(roll) > 0.17 { return FrameGuidance(message: "请保持头部水平", ready: false) }
+            if abs(pitch) > 0.22 { return FrameGuidance(message: "请让镜头与双眼平齐", ready: false) }
+            return FrameGuidance(message: "位置合适，请保持并拍摄", ready: true)
         }
     }
 

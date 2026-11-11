@@ -65,6 +65,7 @@ struct SkinMetric: Codable, Identifiable, Sendable {
     var score: Double?
     var status: String
     var items: [SkinItem]
+    var scoreSource: String? = nil
     var id: String { dimension.rawValue }
 }
 
@@ -108,10 +109,20 @@ struct AnalysisReport: Codable, Identifiable, Sendable {
     var quality: [QualityCheck]
     var modelVersion: String
     var summary: String
+    var assessment: SkinSelfAssessment? = nil
     var totalScore: Double? {
         let scores = skin.compactMap(\.score)
         guard scores.count == SkinDimension.allCases.count else { return nil }
         return scores.reduce(0, +) / Double(scores.count)
+    }
+    var scoreBasisDescription: String {
+        if isSample { return "演示数据，不用于真实检测。" }
+        let selfCount = skin.filter { $0.score != nil && $0.scoreSource == "selfReport" }.count
+        let photoCount = skin.filter { $0.score != nil && $0.scoreSource == "photoHeuristic" }.count
+        if selfCount > 0 || photoCount > 0 {
+            return "已提供 \(photoCount) 项照片视觉参考、\(selfCount) 项自评参考；综合分为五项都有值时的算术均值，不是皮肤仪测量或人群排名。"
+        }
+        return "分数及定义来自报告注明的分析来源；缺项不补零、不生成综合分。"
     }
     var isSample: Bool { origin == .sample }
 }

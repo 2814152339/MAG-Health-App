@@ -1,427 +1,614 @@
 import SwiftUI
 import UIKit
 
-private enum ReportSection: String, CaseIterable {
-    case skin = "皮肤外观"
-    case geometry = "面部几何"
-}
-
 private struct InspectionTarget: Identifiable {
-    var id = UUID()
+    let id = UUID()
     var layerID: String?
 }
 
-private struct ExportDocument: Identifiable {
-    var id = UUID()
-    var url: URL
+private enum ReportSheet: Identifiable {
+    case details, feedback, export(URL)
+    var id: String {
+        switch self {
+        case .details: return "details"
+        case .feedback: return "feedback"
+        case .export(let url): return url.absoluteString
+        }
+    }
 }
 
+/// A local report conversation. Scores and overlays come from this report only.
 @MainActor
 struct ReportView: View {
     @EnvironmentObject private var store: AppStore
     let report: AnalysisReport
-    @State private var section: ReportSection = .skin
     @State private var selectedDimension: SkinDimension = .waterOil
+    @State private var sheet: ReportSheet?
     @State private var inspection: InspectionTarget?
-    @State private var exportDocument: ExportDocument?
     @State private var exportError: String?
-
-    private var selectedMetric: SkinMetric? {
-        report.skin.first { $0.dimension == selectedDimension }
-    }
+    @State private var feedbackChoice = ""
+    @State private var feedbackNote = ""
+    @State private var feedbackSaved = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                reportHeading
+            VStack(alignment: .leading, spacing: 18) {
+                Text(report.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2).foregroundStyle(RuyuanStyle.muted).frame(maxWidth: .infinity)
+                privatePhotoMessage
+                assistantMessage
                 if report.isSample { sampleNotice }
-                summaryCard
-                overviewCard
-                Picker("报告内容", selection: $section) {
-                    ForEach(ReportSection.allCases, id: \.self) { item in
-                        Text(item.rawValue).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
-                if section == .skin {
-                    skinSection
-                } else {
-                    geometrySection
-                }
-                if !report.overlays.isEmpty { overlaySection }
-                qualitySection
-                reportFooter
+                ReportSummaryCard(report: report)
+                dimensionList
+                careSuggestions
+                feedbackBar
+                sourceDisclosure
+                Text("仅作外观记录与养护参考，不替代皮肤科诊断。不同光线、表情和拍摄角度会影响结果。")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4).padding(.horizontal, 4)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 14)
-            .padding(.bottom, 32)
+            .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
         }
         .background(RuyuanStyle.background)
-        .navigationTitle(report.isSample ? "演示报告" : "观察报告")
+        .navigationTitle(report.isSample ? "演示报告" : "如愿 · 测肤记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: exportPDF) {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .accessibilityLabel("导出并分享 PDF 报告")
+                Button(action: exportPDF) { Image(systemName: "square.and.arrow.up") }
+                    .accessibilityLabel("导出并分享 PDF 报告")
             }
         }
+        .accessibilityIdentifier("reportOverview")
         .fullScreenCover(item: $inspection) { target in
             OverlayView(report: report, initialLayerID: target.layerID)
         }
-        .sheet(item: $exportDocument) { document in
-            ReportShareSheet(url: document.url)
+        .sheet(item: $sheet) { destination in
+            switch destination {
+            case .details:
+                ReportDetailSheet(report: report, initialDimension: selectedDimension)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible).presentationCornerRadius(28)
+            case .feedback:
+                ReportFeedbackEditor(initialNote: feedbackNote) { note in
+                    feedbackNote = note; saveFeedback(); sheet = nil
+                }
+                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            case .export(let url): ReportShareSheet(url: url)
+            }
         }
-        .alert("暂时无法导出", isPresented: exportErrorPresented) {
-            Button("知道了", role: .cancel) { exportError = nil }
-        } message: { Text(exportError ?? "") }
+        .alert("暂时无法导出", isPresented: Binding(
+            get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
+                Button("知道了", role: .cancel) { exportError = nil }
+            } message: { Text(exportError ?? "") }
+        .onAppear(perform: loadFeedback)
     }
 
-    private var reportHeading: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("THE OBSERVATION REPORT")
-                    .font(.system(size: 9, weight: .medium)).tracking(1.8)
-                    .foregroundStyle(RuyuanStyle.purple)
-                Spacer()
-                RuyuanPill(title: report.origin.title,
-                           symbol: report.isSample ? "sparkles" : report.origin == .local ? "iphone" : "network")
+    private var privatePhotoMessage: some View {
+        HStack {
+            Spacer(minLength: 80)
+            Button { inspection = InspectionTarget(layerID: nil) } label: {
+                VStack(spacing: 7) {
+                    ZStack(alignment: .topTrailing) {
+                        ReportPhotoView(report: report, image: store.image(for: report))
+                            .frame(width: 90, height: 112).blur(radius: 12)
+                            .overlay(Color.black.opacity(0.12))
+                            .overlay {
+                                VStack(spacing: 5) {
+                                    Image(systemName: "eye.slash").font(.caption)
+                                    Text("点击查看").font(.system(size: 10))
+                                }.foregroundStyle(.white)
+                            }
+                        Label("隐私保护", systemImage: "lock.shield.fill")
+                            .font(.system(size: 9, weight: .medium)).foregroundStyle(RuyuanStyle.purple)
+                            .padding(.horizontal, 6).padding(.vertical, 4)
+                            .background(.white.opacity(0.96), in: Capsule())
+                    }.clipShape(RoundedRectangle(cornerRadius: 17))
+                    Text(report.isSample ? "演示示意图" : "原图默认模糊保护")
+                        .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
+                }
             }
-            Text(report.isSample ? "先了解报告，\n再认识自己。" : "每个细节，\n都有自己的美。")
-                .font(.system(.title, design: .serif, weight: .medium))
-                .lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
-            Text(report.createdAt.formatted(date: .long, time: .shortened))
-                .font(.caption).foregroundStyle(RuyuanStyle.muted)
+            .buttonStyle(.plain)
+            .accessibilityLabel(report.isSample ? "查看演示示意图" : "查看本次原始照片")
+        }
+    }
+
+    private var assistantMessage: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "sparkle").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                .frame(width: 28, height: 28).background(.white, in: Circle())
+            Text("已为你整理这次的肤况观察，具体结果如下。")
+                .font(.subheadline).lineSpacing(4).foregroundStyle(RuyuanStyle.ink)
+                .padding(15).background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
     private var sampleNotice: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle").padding(.top, 2)
-            Text("这是一份演示报告。分数、比例与图层均为示例，不代表你或任何真实人物的检测结果。")
-                .font(.caption).lineSpacing(4)
-        }
-        .foregroundStyle(RuyuanStyle.purple)
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RuyuanStyle.lilac.opacity(0.7), in: RoundedRectangle(cornerRadius: 17))
+        Label("这是一份演示报告。分数、比例与图层均为示例，不代表你或任何真实人物的检测结果。", systemImage: "info.circle")
+            .font(.caption).foregroundStyle(RuyuanStyle.purple).lineSpacing(3)
+            .padding(13).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private var summaryCard: some View {
-        RuyuanCard {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .center, spacing: 22) {
-                    Button {
-                        inspection = InspectionTarget(layerID: nil)
-                    } label: {
-                        ZStack(alignment: .bottomTrailing) {
-                            ReportPhotoView(report: report, image: store.image(for: report))
-                                .frame(width: 100, height: 136)
-                                .background(RuyuanStyle.lilac)
-                                .clipShape(RoundedRectangle(cornerRadius: 18))
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.caption2.weight(.semibold)).foregroundStyle(.white)
-                                .padding(7).background(RuyuanStyle.purple, in: Circle())
-                                .padding(6)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(report.isSample ? "查看演示面部示意图" : "放大查看原图")
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(report.isSample ? "演示 · 五维均值" : "五维均值")
-                            .font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.muted)
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(scoreText(report.totalScore))
-                                .font(.system(size: 48, weight: .light, design: .rounded))
-                                .monospacedDigit().foregroundStyle(RuyuanStyle.purple)
-                            if report.totalScore != nil {
-                                Text("/ 100").font(.caption).foregroundStyle(RuyuanStyle.muted)
+    private var dimensionList: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("综合参考分").font(.subheadline.weight(.semibold))
+                Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                Spacer()
+                Text(report.isSample ? "演示" : "非仪器评分").font(.caption2).foregroundStyle(RuyuanStyle.muted)
+            }.padding(.bottom, 12)
+            ForEach(SkinDimension.allCases) { dimension in
+                let metric = report.skin.first { $0.dimension == dimension }
+                Button { openDetails(dimension) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: dimension.symbol).font(.system(size: 21, weight: .light))
+                            .frame(width: 30).foregroundStyle(RuyuanStyle.ink)
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 6) {
+                                Text(dimension.title).font(.subheadline.weight(.medium))
+                                Text(metric?.score == nil ? "未评分" : reportScore(metric?.score))
+                                    .font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
                             }
+                            Text(dimensionDescription(dimension)).font(.caption2).foregroundStyle(RuyuanStyle.muted)
                         }
-                        Text(report.totalScore == nil ? "尚无完整五维评分" : report.isSample ? "仅为界面演示" : "五个外观维度的算术均值")
-                            .font(.caption).foregroundStyle(RuyuanStyle.muted)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(RuyuanStyle.muted)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(RuyuanStyle.ink).padding(.vertical, 15)
+                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
-                if !report.summary.isEmpty {
-                    Rectangle().fill(RuyuanStyle.line).frame(height: 1)
-                    Text(report.summary)
-                        .font(.subheadline).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
-                        .textSelection(.enabled)
-                }
-                if report.totalScore == nil && !report.isSample {
-                    Label("未提供的数据保持空缺，不使用演示分数补齐。", systemImage: "minus.circle")
-                        .font(.caption).foregroundStyle(RuyuanStyle.muted)
-                }
+                .buttonStyle(.plain).accessibilityIdentifier("dimension-\(dimension.rawValue)")
+                if dimension != SkinDimension.allCases.last { Divider().overlay(RuyuanStyle.line) }
             }
+            Button { openDetails(.waterOil) } label: {
+                Text("本次解读结果").font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .foregroundStyle(.white).background(RuyuanStyle.purple, in: Capsule())
+            }
+            .buttonStyle(.plain).padding(.top, 10).accessibilityIdentifier("openReportDetails")
+        }
+        .padding(18).background(.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var careSuggestions: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("把这次观察，变成日常照顾。")
+                .font(.subheadline.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
+            Text(report.isSample ? "下面是示例护理思路，先从温和、规律的日常开始。" : "结合本次已提供的分项，给你几个温和的护理与记录方向。")
+                .font(.caption).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
+            ForEach(careDimensions, id: \.rawValue) { dimension in
+                Button { openDetails(dimension) } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(careTitle(dimension)).font(.subheadline.weight(.medium))
+                            Text(careText(dimension)).font(.caption).lineSpacing(4)
+                                .foregroundStyle(RuyuanStyle.muted).multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 5)
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                    }
+                    .foregroundStyle(RuyuanStyle.ink).padding(15).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 15))
+                }.buttonStyle(.plain)
+            }
+        }.padding(.horizontal, 3)
+    }
+
+    private var careDimensions: [SkinDimension] {
+        let available = SkinDimension.allCases.filter { dimension in
+            report.skin.contains { $0.dimension == dimension && !$0.items.isEmpty }
+        }
+        return Array(available.prefix(3))
+    }
+
+    private func careTitle(_ dimension: SkinDimension) -> String {
+        switch dimension {
+        case .waterOil: return "水油护理 · 温和清洁"
+        case .tone: return "肤色记录 · 规律防晒"
+        case .sensitivity: return "肤感观察 · 精简护理"
+        case .smoothness: return "纹理护理 · 避免过度摩擦"
+        case .aging: return "眼周与细纹 · 规律作息"
         }
     }
 
-    private var overviewCard: some View {
-        RuyuanCard {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    SectionHeading(title: "五维观察", subtitle: report.isSample ? "演示数据 · 不是真实检测" : "外观信息，不是健康评级")
-                    if report.isSample { RuyuanPill(title: "演示") }
-                }
-                SkinRadarChart(metrics: report.skin, isSample: report.isSample)
-                    .frame(height: 245)
-                VStack(spacing: 13) {
-                    ForEach(SkinDimension.allCases) { dimension in
-                        let metric = report.skin.first { $0.dimension == dimension }
-                        HStack(spacing: 9) {
-                            Image(systemName: dimension.symbol)
-                                .font(.caption).foregroundStyle(RuyuanStyle.purple).frame(width: 19)
-                            Text(dimension.title).font(.caption).foregroundStyle(RuyuanStyle.ink)
-                            Spacer()
-                            Text(metric?.score == nil ? "未评分" : "\(scoreText(metric?.score)) / 100")
-                                .font(.caption.weight(.medium)).monospacedDigit()
-                                .foregroundStyle(metric?.score == nil ? RuyuanStyle.muted : RuyuanStyle.purple)
-                        }
-                    }
-                }
-                .padding(.top, 5)
-            }
+    private func careText(_ dimension: SkinDimension) -> String {
+        let item = report.skin.first { $0.dimension == dimension }?.items.first
+        let observation = item.map { "本次\($0.title)：\($0.valueText)。" } ?? ""
+        switch dimension {
+        case .waterOil: return observation + "不要仅凭反光加大去油力度；按真实肤感选择温和清洁与保湿。"
+        case .tone: return observation + "保持日常防晒；尽量在相同光线下复拍，避免把光影变化当作肤色改变。"
+        case .sensitivity: return observation + "单张照片不能确认敏感。以实际不适感为准，先减少叠加刺激性产品。"
+        case .smoothness: return observation + "避免反复挤压、用力磨砂；保持规律清洁，结合清晰复拍持续观察。"
+        case .aging: return observation + "保持规律作息、温和保湿；表情纹与阴影会随角度变化，不把视觉参考当作实际年龄。"
         }
     }
 
-    private var skinSection: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            SectionHeading(title: "逐项了解皮肤外观", subtitle: "点击维度，查看实际提供的信息")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 9) {
-                    ForEach(SkinDimension.allCases) { dimension in
-                        Button { selectedDimension = dimension } label: {
-                            Label(dimension.title, systemImage: dimension.symbol)
-                                .font(.caption.weight(.medium))
-                                .padding(.horizontal, 14).padding(.vertical, 12)
-                                .foregroundStyle(selectedDimension == dimension ? .white : RuyuanStyle.purple)
-                                .background(selectedDimension == dimension ? RuyuanStyle.purple : .white,
-                                            in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(selectedDimension == dimension ? .isSelected : [])
-                    }
-                }
-            }
-            RuyuanCard {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(selectedDimension.title).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
-                            Text(selectedMetric?.status ?? "本报告未提供此维度的分析输出")
-                                .font(.caption).foregroundStyle(RuyuanStyle.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 15)
-                        VStack(alignment: .trailing, spacing: 3) {
-                            Text(selectedMetric?.score == nil ? "未评分" : scoreText(selectedMetric?.score))
-                                .font(selectedMetric?.score == nil ? .subheadline.weight(.medium) : .title.weight(.light))
-                                .foregroundStyle(RuyuanStyle.purple).monospacedDigit()
-                            if report.isSample { Text("演示分").font(.caption2).foregroundStyle(RuyuanStyle.muted) }
-                        }
-                    }
-                    if let metric = selectedMetric, !metric.items.isEmpty {
-                        ForEach(metric.items) { item in
-                            if item.id != metric.items.first?.id { Divider() }
-                            skinItem(item)
-                        }
-                    } else {
-                        Text("没有可展示的分项结果。你仍可查看原图和已提供的面部几何信息。")
-                            .font(.subheadline).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
-                    }
-                }
-            }
-        }
-    }
-
-    private func skinItem(_ item: SkinItem) -> some View {
+    private var feedbackBar: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(item.title).font(.subheadline.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
-                Spacer(minLength: 0)
-                Text(item.valueText).font(.subheadline.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
-                    .multilineTextAlignment(.trailing)
+            HStack(spacing: 22) {
+                Button { toggleFeedback("like") } label: {
+                    Image(systemName: feedbackChoice == "like" ? "hand.thumbsup.fill" : "hand.thumbsup")
+                }.accessibilityLabel("这份报告有帮助").accessibilityIdentifier("reportFeedbackLike")
+                Button { toggleFeedback("dislike") } label: {
+                    Image(systemName: feedbackChoice == "dislike" ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                }.accessibilityLabel("这份报告需要改进")
+                Button("补充反馈") { sheet = .feedback }.font(.caption)
+                Spacer()
+                Button(action: exportPDF) { Label("分享", systemImage: "square.and.arrow.up") }
+                    .font(.caption).accessibilityLabel("分享 PDF 报告")
+            }.foregroundStyle(RuyuanStyle.purple).padding(.vertical, 5)
+            if feedbackSaved {
+                Text("反馈已保存在本机，不会自动上传。")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.muted)
             }
-            Text(item.note).font(.caption).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            if let overlayID = item.overlayID, report.overlays.contains(where: { $0.id == overlayID }) {
-                Button {
-                    inspection = InspectionTarget(layerID: overlayID)
-                } label: {
-                    Label(report.isSample ? "查看演示图层" : "查看对应图层", systemImage: "viewfinder")
-                        .font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
-                        .padding(.vertical, 8)
-                }
-            }
-        }
+        }.padding(.horizontal, 5)
     }
 
-    private var geometrySection: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            SectionHeading(title: "面部几何观察", subtitle: "二维照片比例 · 会受表情与拍摄角度影响")
-            Button {
-                inspection = InspectionTarget(layerID: nil)
-            } label: {
-                ZStack(alignment: .bottom) {
-                    ReportPhotoView(report: report, image: store.image(for: report),
-                                    showsLandmarks: true)
-                        .frame(height: 285)
-                        .background(RuyuanStyle.lilac.opacity(0.4))
-                    HStack {
-                        Label(geometryPreviewTitle, systemImage: "face.dashed")
-                        Spacer()
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    }
-                    .font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
-                    .padding(15).background(.regularMaterial)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 23))
-            }
-            .buttonStyle(.plain)
-            if report.geometry.isEmpty {
-                RuyuanCard {
-                    Text("本报告未提供可用的面部几何指标。")
-                        .font(.subheadline).foregroundStyle(RuyuanStyle.muted)
-                }
-            } else {
-                RuyuanCard {
-                    VStack(alignment: .leading, spacing: 19) {
-                        ForEach(report.geometry) { metric in
-                            if metric.id != report.geometry.first?.id { Divider() }
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(metric.title).font(.subheadline.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
-                                    Spacer()
-                                    Text(metric.formattedValue).font(.title3.weight(.light))
-                                        .monospacedDigit().foregroundStyle(RuyuanStyle.purple)
-                                }
-                                Text(metric.note).font(.caption).lineSpacing(3).foregroundStyle(RuyuanStyle.muted)
-                            }
-                        }
-                        if report.isSample {
-                            RuyuanPill(title: "上述比例均为演示数据", symbol: "info.circle")
-                        }
-                    }
-                }
-            }
-        }
+    private var sourceDisclosure: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("来源：\(report.origin.title)").font(.caption)
+                Text(report.modelVersion.isEmpty ? "未提供版本信息" : report.modelVersion)
+                    .font(.caption2.monospaced()).textSelection(.enabled)
+                Text("照片外观、自评与演示数据分别标示；缺失指标保持空缺，不以 0 分或示例数字补齐。")
+                    .font(.caption).lineSpacing(4)
+            }.foregroundStyle(RuyuanStyle.muted).padding(.top, 9)
+        } label: {
+            Label("查看分析依据", systemImage: "checkmark.shield").font(.caption).foregroundStyle(RuyuanStyle.muted)
+        }.padding(14).background(.white.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private var overlaySection: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            SectionHeading(title: "可视化图层", subtitle: report.isSample ? "点击放大演示标注 · 非真实检测" : "标注来自本报告输出，可与原图切换对照")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 13) {
-                    ForEach(report.overlays) { layer in
-                        Button {
-                            inspection = InspectionTarget(layerID: layer.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ZStack(alignment: .bottomTrailing) {
-                                    ReportPhotoView(report: report, image: store.image(for: report), layers: [layer])
-                                        .frame(width: 145, height: 170)
-                                        .background(RuyuanStyle.lilac.opacity(0.6))
-                                    Image(systemName: "plus.magnifyingglass")
-                                        .font(.caption).foregroundStyle(RuyuanStyle.purple)
-                                        .padding(7).background(.regularMaterial, in: Circle()).padding(8)
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: 18))
-                                HStack(spacing: 6) {
-                                    Circle().fill(Color(hex: layer.colorHex)).frame(width: 6, height: 6)
-                                    Text(layer.title).font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
-                                }
-                                .frame(width: 145, alignment: .leading)
-                                .multilineTextAlignment(.leading)
-                                if report.isSample {
-                                    Text("演示图层").font(.caption2).foregroundStyle(RuyuanStyle.muted)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("放大查看\(report.isSample ? "演示" : "")\(layer.title)图层")
-                    }
-                }
-                .padding(.bottom, 3)
-            }
-        }
+    private func openDetails(_ dimension: SkinDimension) { selectedDimension = dimension; sheet = .details }
+    private var feedbackKey: String { "report.feedback.v1.\(report.id)" }
+    private func loadFeedback() {
+        let value = UserDefaults.standard.dictionary(forKey: feedbackKey)
+        feedbackChoice = value?["choice"] as? String ?? ""
+        feedbackNote = value?["note"] as? String ?? ""
+        feedbackSaved = value != nil
     }
-
-    private var qualitySection: some View {
-        RuyuanCard {
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 18) {
-                    if report.quality.isEmpty {
-                        Text("本报告未提供拍摄质量检查记录。")
-                            .font(.caption).foregroundStyle(RuyuanStyle.muted)
-                    }
-                    ForEach(report.quality) { check in
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: check.passed ? "checkmark.circle" : "info.circle")
-                                .foregroundStyle(check.passed ? RuyuanStyle.green : RuyuanStyle.purple)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(check.title).font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
-                                Text(check.detail).font(.caption).lineSpacing(3).foregroundStyle(RuyuanStyle.muted)
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("分析来源与版本").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
-                        Text(report.modelVersion.isEmpty ? "未提供版本信息" : report.modelVersion)
-                            .font(.caption2.monospaced()).foregroundStyle(RuyuanStyle.muted)
-                            .textSelection(.enabled)
-                        Text("报告状态：\(statusTitle)").font(.caption2).foregroundStyle(RuyuanStyle.muted)
-                    }
-                }
-                .padding(.top, 18)
-            } label: {
-                Label("拍摄质量与分析来源", systemImage: "checkmark.shield")
-                    .font(.subheadline.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
-            }
-            .tint(RuyuanStyle.purple)
-        }
+    private func toggleFeedback(_ value: String) {
+        feedbackChoice = feedbackChoice == value ? "" : value
+        saveFeedback()
     }
-
-    private var reportFooter: some View {
-        VStack(spacing: 11) {
-            Image(systemName: "sparkle").font(.title3.weight(.light)).foregroundStyle(RuyuanStyle.purple)
-            Text("美不止一种答案。")
-                .font(.system(.subheadline, design: .serif)).foregroundStyle(RuyuanStyle.ink)
-            Text("报告仅用于外观观察与记录，不用于医学诊断、疾病筛查或治疗决策。照片条件与模型局限可能影响结果。")
-                .font(.caption2).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity).padding(.horizontal, 12).padding(.top, 5)
+    private func saveFeedback() {
+        UserDefaults.standard.set(["choice": feedbackChoice, "note": feedbackNote,
+                                   "updatedAt": Date().timeIntervalSince1970] as [String: Any], forKey: feedbackKey)
+        feedbackSaved = true
     }
-
-    private func scoreText(_ score: Double?) -> String {
-        guard let score, score.isFinite else { return "—" }
-        return String(format: "%.0f", score)
-    }
-
-    private var statusTitle: String {
-        switch report.status.lowercased() {
-        case "sample", "demo": return "演示样例"
-        case "completed", "ready": return "已完成"
-        case "partial": return "部分指标已完成"
-        default: return report.status
-        }
-    }
-
-    private var geometryPreviewTitle: String {
-        if report.isSample { return report.landmarks.isEmpty ? "演示面部示意图" : "演示特征点" }
-        return report.landmarks.isEmpty ? "放大查看原图" : "查看真实特征点"
-    }
-
     private func exportPDF() {
-        do { exportDocument = ExportDocument(url: try store.exportPDF(report)) }
+        do { sheet = .export(try store.exportPDF(report)) }
         catch { exportError = error.localizedDescription }
     }
+}
 
-    private var exportErrorPresented: Binding<Bool> {
-        Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })
+private func reportScore(_ score: Double?) -> String {
+    guard let score, score.isFinite else { return "—" }
+    return String(format: "%.0f", score)
+}
+
+private func dimensionDescription(_ dimension: SkinDimension) -> String {
+    switch dimension {
+    case .waterOil: return "油光、保湿肤感与照片中的亮区"
+    case .tone: return "肤色、色差与暗沉外观"
+    case .sensitivity: return "泛红外观与本人肤感自评"
+    case .smoothness: return "痘样、点状纹理与毛孔外观"
+    case .aging: return "细纹、眼周与面部线条"
+    }
+}
+
+private struct ReportSummaryCard: View {
+    let report: AnalysisReport
+    var body: some View {
+        RuyuanCard(padding: 19) {
+            VStack(alignment: .leading, spacing: 17) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(report.isSample ? "认真养肤 · 示例" : "认真养肤，慢慢变好")
+                            .font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+                        Text(report.assessment?.typeTitle ?? (report.isSample ? "肤况示例" : "单次照片外观记录"))
+                            .font(.caption).foregroundStyle(RuyuanStyle.muted)
+                        if let age = report.assessment?.age {
+                            Text("实际年龄 \(age) 岁 · 来自本人填写").font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                        }
+                        Text(report.isSample ? "分数和标注仅作演示" : "照片观察与自评参考，不是仪器测量")
+                            .font(.caption2).foregroundStyle(RuyuanStyle.purple)
+                    }
+                    Spacer(minLength: 0)
+                    referenceRing
+                }
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("总体结论").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+                    Text(report.summary.isEmpty ? "本报告未提供总体文字结论，可查看已提供的分项。" : report.summary)
+                        .font(.caption).lineSpacing(6).foregroundStyle(RuyuanStyle.muted)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+                if report.totalScore == nil {
+                    Label("部分维度未评分，不生成综合分、肤龄或同龄排名。", systemImage: "minus.circle")
+                        .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                }
+                Text(report.scoreBasisDescription)
+                    .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted).lineSpacing(3)
+            }
+        }
+    }
+    private var referenceRing: some View {
+        ZStack {
+            Circle().stroke(RuyuanStyle.lilac, lineWidth: 7)
+            if let score = report.totalScore, score.isFinite {
+                Circle().trim(from: 0, to: CGFloat(min(max(score / 100, 0), 1)))
+                    .stroke(AngularGradient(colors: [RuyuanStyle.purple, Color(hex: "B3A5FF"), Color(hex: "FFCE54")], center: .center),
+                            style: StrokeStyle(lineWidth: 7, lineCap: .round)).rotationEffect(.degrees(-90))
+            }
+            VStack(spacing: 2) {
+                Text(reportScore(report.totalScore)).font(.system(size: 20, weight: .semibold, design: .rounded))
+                Text(report.isSample ? "演示" : "参考").font(.system(size: 9))
+            }.foregroundStyle(RuyuanStyle.purple)
+        }.frame(width: 66, height: 66).padding(3)
+        .accessibilityLabel("综合参考分 \(reportScore(report.totalScore))")
+    }
+}
+
+@MainActor
+private struct ReportDetailSheet: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let report: AnalysisReport
+    let initialDimension: SkinDimension
+    @State private var selectedDimension: SkinDimension = .waterOil
+    @State private var inspection: InspectionTarget?
+    private var metric: SkinMetric? { report.skin.first { $0.dimension == selectedDimension } }
+
+    var body: some View {
+        NavigationStack {
+          VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("皮肤质量解读结果").font(.headline).foregroundStyle(RuyuanStyle.ink)
+                    Text(report.isSample ? "交互演示 · 不是真实检测" : "照片外观与肤感参考分析")
+                        .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(RuyuanStyle.muted).frame(width: 30, height: 30)
+                        .background(.white.opacity(0.65), in: Circle())
+                }.accessibilityLabel("关闭报告详情")
+            }.padding(.horizontal, 19).padding(.top, 20).padding(.bottom, 16)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
+                    ReportSummaryCard(report: report)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "atom").foregroundStyle(RuyuanStyle.purple)
+                            Text("综合参考分").font(.subheadline.weight(.semibold))
+                            Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                        }
+                        SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 225)
+                    }.padding(.horizontal, 6)
+                    Section {
+                        dimensionContent
+                        if !report.geometry.isEmpty { geometryContent }
+                        if !report.overlays.isEmpty { allLayerGallery }
+                        qualityContent
+                    } header: { dimensionTabs }
+                }.padding(.horizontal, 18).padding(.bottom, 28)
+            }
+        }
+        .background(RuyuanStyle.background).accessibilityIdentifier("reportDetailSheet")
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear { selectedDimension = initialDimension }
+        .fullScreenCover(item: $inspection) { target in
+            OverlayView(report: report, initialLayerID: target.layerID)
+        }
+        }
+    }
+
+    private var dimensionTabs: some View {
+        HStack(spacing: 5) {
+            ForEach(SkinDimension.allCases) { dimension in
+                let value = report.skin.first { $0.dimension == dimension }
+                Button { withAnimation(.easeInOut(duration: 0.2)) { selectedDimension = dimension } } label: {
+                    VStack(spacing: 4) {
+                        Text(dimension.title).font(.system(size: 12, weight: .medium))
+                        Text(value?.score == nil ? "未评分" : "\(reportScore(value?.score))分")
+                            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                    .foregroundStyle(selectedDimension == dimension ? RuyuanStyle.purple : RuyuanStyle.ink)
+                    .background(.white.opacity(selectedDimension == dimension ? 1 : 0.6), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(selectedDimension == dimension ? RuyuanStyle.purple.opacity(0.75) : .clear, lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain).accessibilityIdentifier("detail-tab-\(dimension.rawValue)")
+                .accessibilityAddTraits(selectedDimension == dimension ? .isSelected : [])
+            }
+        }.padding(.vertical, 9).background(RuyuanStyle.background)
+    }
+
+    private var dimensionContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: selectedDimension.symbol).font(.title3)
+                Text(selectedDimension.title).font(.title3.weight(.semibold))
+                Text(metric?.score == nil ? "未评分" : reportScore(metric?.score))
+                    .font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                Spacer()
+            }.foregroundStyle(RuyuanStyle.ink)
+            Text(metric?.status ?? "本报告未提供该维度的结果")
+                .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
+            if let source = metric?.scoreSource {
+                Text(source == "selfReport" ? "自评参考分 · 来自本人回答" : source == "photoHeuristic" ? "照片外观参考分 · 非仪器测量" : source)
+                    .font(.system(size: 10)).foregroundStyle(RuyuanStyle.purple)
+            }
+            if let metric, !metric.items.isEmpty {
+                ForEach(Array(metric.items.enumerated()), id: \.element.id) { index, item in
+                    detailItem(item, index: index)
+                }
+                if selectedDimension == .aging { regionalLineChart(metric.items) }
+            } else {
+                RuyuanCard(padding: 16) {
+                    Text("本维度尚无可用分项，不以示例数据补齐。可继续查看原图与其他已有结果。")
+                        .font(.caption).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
+                }
+            }
+        }
+    }
+
+    private func regionalLineChart(_ items: [SkinItem]) -> some View {
+        let regions: [(String, String)] = [("line-forehead", "额头"), ("line-glabella", "眉间"),
+                                           ("line-nasolabial", "鼻唇"), ("line-eye", "眼周")]
+        let values = regions.map { region -> Double? in
+            guard let text = items.first(where: { $0.id == region.0 })?.valueText,
+                  text.contains("%"),
+                  let range = text.range(of: #"[0-9]+(?:\.[0-9]+)?"#, options: .regularExpression),
+                  let value = Double(text[range]), value.isFinite, (0...100).contains(value) else { return nil }
+            return value
+        }
+        let upper = max(1, ((values.compactMap { $0 }.max() ?? 1) / 5).rounded(.up) * 5)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("分区域纹理响应").font(.subheadline.weight(.semibold))
+            Text("覆盖率 · 图示范围 0—\(String(format: "%.0f", upper))%")
+                .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+            HStack(alignment: .bottom, spacing: 15) {
+                ForEach(regions.indices, id: \.self) { index in
+                    VStack(spacing: 7) {
+                        Text(values[index].map { String(format: "%.1f%%", $0) } ?? "未提供")
+                            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.purple)
+                        ZStack(alignment: .bottom) {
+                            RoundedRectangle(cornerRadius: 5).fill(RuyuanStyle.lilac.opacity(0.6))
+                            if let value = values[index] {
+                                RoundedRectangle(cornerRadius: 5).fill(RuyuanStyle.purple.opacity(0.85))
+                                    .frame(height: max(value > 0 ? 2 : 0, CGFloat(value / upper) * 85))
+                            }
+                        }.frame(width: 22, height: 85)
+                        Text(regions[index].1).font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                    }.frame(maxWidth: .infinity)
+                }
+            }.padding(.top, 4)
+            Text("仅为照片中纹理响应的区域覆盖率，不是皱纹根数或临床严重程度。缺失项不补值。")
+                .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted).lineSpacing(3)
+        }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func detailItem(_ item: SkinItem, index: Int) -> some View {
+        let layer = report.overlays.first { $0.id == item.overlayID }
+        return RuyuanCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 13) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("\(index + 1). \(item.title)").font(.subheadline.weight(.semibold))
+                        Text(item.valueText).font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
+                        Label(layer == nil ? "点击缩略图查看原图" : "图片标色代表对应观察区域",
+                              systemImage: layer == nil ? "photo" : "circle.lefthalf.filled")
+                            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    overlayThumbnail(layer, width: 62, height: 78)
+                }
+                if let layer {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color(hex: layer.colorHex)).frame(width: 5, height: 5)
+                        Text(layer.title).font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                    }
+                }
+                Text(item.note).font(.caption).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+        }
+    }
+
+    private func overlayThumbnail(_ layer: OverlayLayer?, width: CGFloat, height: CGFloat) -> some View {
+        Button { inspection = InspectionTarget(layerID: layer?.id) } label: {
+            ZStack(alignment: .topTrailing) {
+                ReportPhotoView(report: report, image: store.image(for: report), layers: layer.map { [$0] } ?? [])
+                    .frame(width: width, height: height).background(Color(hex: "28252D"))
+                Image(systemName: "magnifyingglass").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white).padding(5).background(.black.opacity(0.5), in: Circle()).padding(4)
+                VStack {
+                    Spacer()
+                    Text(layer == nil ? "原图" : "图层").font(.system(size: 8)).foregroundStyle(.white)
+                        .padding(3).frame(maxWidth: .infinity).background(.black.opacity(0.5))
+                }
+            }.clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain).accessibilityLabel(layer.map { "放大\($0.title)图层" } ?? "放大本次原始照片")
+    }
+
+    private var geometryContent: some View {
+        RuyuanCard(padding: 16) {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 16) {
+                    if !report.isSample {
+                        NavigationLink {
+                            FaceCalibrationView(report: report).toolbar(.visible, for: .navigationBar)
+                        } label: {
+                            Label("发际线与尺寸标定", systemImage: "ruler")
+                                .font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                        }
+                    }
+                    Button {
+                        inspection = InspectionTarget(layerID: report.overlays.first { $0.id.hasPrefix("geometry-") }?.id)
+                    } label: {
+                        HStack {
+                            Label("查看五官定位与比例图层", systemImage: "face.dashed")
+                            Spacer(); Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        }.font(.caption).foregroundStyle(RuyuanStyle.purple).padding(.vertical, 8)
+                    }
+                    ForEach(report.geometry) { item in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(item.title).font(.caption.weight(.medium)); Spacer()
+                                Text(item.formattedValue).font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                            }
+                            Text(item.note).font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
+                        }
+                    }
+                }.padding(.top, 12)
+            } label: {
+                Label("面部比例与几何", systemImage: "face.dashed")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+            }
+        }
+    }
+
+    private var allLayerGallery: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("本次全部图层").font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(report.overlays) { layer in
+                        VStack(alignment: .leading, spacing: 7) {
+                            overlayThumbnail(layer, width: 97, height: 120)
+                            Text(layer.title).font(.caption2).foregroundStyle(RuyuanStyle.ink)
+                                .frame(width: 97, alignment: .leading).lineLimit(2)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var qualityContent: some View {
+        RuyuanCard(padding: 16) {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(report.quality) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: item.passed ? "checkmark.circle" : "info.circle")
+                                .foregroundStyle(item.passed ? RuyuanStyle.green : RuyuanStyle.purple)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.title).font(.caption.weight(.medium))
+                                Text(item.detail).font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(3)
+                            }
+                        }
+                    }
+                    Text(report.modelVersion).font(.caption2.monospaced()).foregroundStyle(RuyuanStyle.muted)
+                }.padding(.top, 13)
+            } label: {
+                Label("拍摄质量与来源", systemImage: "checkmark.shield")
+                    .font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
+            }
+        }
     }
 }
 
@@ -429,46 +616,42 @@ private struct SkinRadarChart: View {
     let metrics: [SkinMetric]
     let isSample: Bool
     private let dimensions = SkinDimension.allCases
-
     private var completeScores: [Double]? {
-        let values = dimensions.compactMap { dimension in
-            metrics.first { $0.dimension == dimension }?.score
-        }
+        let values = dimensions.compactMap { dimension in metrics.first { $0.dimension == dimension }?.score }
         guard values.count == dimensions.count, values.allSatisfy({ $0.isFinite }) else { return nil }
         return values
     }
-
     var body: some View {
         ZStack {
             Canvas { context, size in
-                let center = CGPoint(x: size.width / 2, y: size.height / 2 + 3)
+                let center = CGPoint(x: size.width / 2, y: size.height / 2)
                 let radius = Double(min(size.width * 0.31, size.height * 0.34))
                 for step in 1...4 {
                     let ring = polygon(center: center, radius: radius * Double(step) / 4)
-                    context.stroke(ring, with: .color(RuyuanStyle.line), lineWidth: 1)
+                    context.fill(ring, with: .color(RuyuanStyle.purple.opacity(0.015)))
+                    context.stroke(ring, with: .color(RuyuanStyle.purple.opacity(0.13)), lineWidth: 0.8)
                 }
                 for index in dimensions.indices {
                     let outer = position(index: index, center: center, radius: radius)
                     var axis = Path(); axis.move(to: center); axis.addLine(to: outer)
-                    context.stroke(axis, with: .color(RuyuanStyle.line), lineWidth: 1)
-                    let labelPoint = position(index: index, center: center, radius: radius + 25)
-                    context.draw(Text(dimensions[index].title).font(.caption2).foregroundColor(RuyuanStyle.muted),
-                                 at: labelPoint)
+                    context.stroke(axis, with: .color(RuyuanStyle.line), lineWidth: 0.7)
+                    let value = metrics.first { $0.dimension == dimensions[index] }?.score
+                    let label = "\(dimensions[index].title) \(reportScore(value))"
+                    context.draw(Text(label).font(.system(size: 10)).foregroundColor(RuyuanStyle.muted),
+                                 at: position(index: index, center: center, radius: radius + 26))
                 }
                 if let scores = completeScores {
                     var data = Path()
                     for index in scores.indices {
-                        let point = position(index: index, center: center,
-                                             radius: radius * min(max(scores[index] / 100, 0), 1))
+                        let point = position(index: index, center: center, radius: radius * min(max(scores[index] / 100, 0), 1))
                         if index == 0 { data.move(to: point) } else { data.addLine(to: point) }
                     }
                     data.closeSubpath()
-                    context.fill(data, with: .color(RuyuanStyle.purple.opacity(0.15)))
-                    context.stroke(data, with: .color(RuyuanStyle.purple), style: StrokeStyle(lineWidth: 1.7, lineJoin: .round))
+                    context.fill(data, with: .color(RuyuanStyle.purple.opacity(0.16)))
+                    context.stroke(data, with: .color(RuyuanStyle.purple.opacity(0.7)), lineWidth: 1.3)
                     for index in scores.indices {
-                        let point = position(index: index, center: center,
-                                             radius: radius * min(max(scores[index] / 100, 0), 1))
-                        context.fill(Path(ellipseIn: CGRect(x: point.x - 3, y: point.y - 3, width: 6, height: 6)),
+                        let point = position(index: index, center: center, radius: radius * min(max(scores[index] / 100, 0), 1))
+                        context.fill(Path(ellipseIn: CGRect(x: point.x - 2.3, y: point.y - 2.3, width: 4.6, height: 4.6)),
                                      with: .color(RuyuanStyle.purple))
                     }
                 }
@@ -477,31 +660,53 @@ private struct SkinRadarChart: View {
                 VStack(spacing: 5) {
                     Text("未提供完整评分").font(.caption.weight(.medium))
                     Text("不以 0 分代替空缺").font(.caption2)
-                }
-                .foregroundStyle(RuyuanStyle.muted)
-                .padding(10).background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 12))
+                }.foregroundStyle(RuyuanStyle.muted).padding(10)
+                    .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 12))
             }
-            if isSample {
-                VStack { Spacer(); Text("演示五维图").font(.caption2).foregroundStyle(RuyuanStyle.purple) }
+            VStack {
+                Spacer()
+                Text(isSample ? "演示五维图" : "综合参考 · 不同维度来源见分项")
+                    .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isSample ? "五维演示雷达图，不是真实检测结果" : completeScores == nil ? "五维雷达图，未提供完整评分" : "五维外观雷达图，各维度分数见下方文字")
+        .accessibilityLabel(isSample ? "演示雷达图" : completeScores == nil ? "五维评分不完整" : "五维综合参考雷达图，非仪器测量")
     }
-
     private func position(index: Int, center: CGPoint, radius: Double) -> CGPoint {
         let angle = Double(index) * 2 * .pi / Double(dimensions.count) - .pi / 2
         return CGPoint(x: center.x + CGFloat(cos(angle) * radius), y: center.y + CGFloat(sin(angle) * radius))
     }
-
     private func polygon(center: CGPoint, radius: Double) -> Path {
         var path = Path()
         for index in dimensions.indices {
             let point = position(index: index, center: center, radius: radius)
             if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
-        path.closeSubpath()
-        return path
+        path.closeSubpath(); return path
+    }
+}
+
+private struct ReportFeedbackEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let initialNote: String
+    let onSave: (String) -> Void
+    @State private var note = ""
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 15) {
+                Text("哪部分有帮助，或想改进？").font(.headline)
+                TextEditor(text: $note).padding(9).frame(minHeight: 100)
+                    .scrollContentBackground(.hidden).background(.white, in: RoundedRectangle(cornerRadius: 15))
+                Label("反馈仅保存在这台设备，不会自动发往服务器。", systemImage: "lock.shield")
+                    .font(.caption).foregroundStyle(RuyuanStyle.muted)
+                Spacer(minLength: 0)
+            }.padding(22).background(RuyuanStyle.background)
+                .navigationTitle("本次报告反馈").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { Button("保存") { onSave(String(note.prefix(2000))) } }
+                }
+        }.onAppear { note = initialNote }
     }
 }
 

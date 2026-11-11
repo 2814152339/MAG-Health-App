@@ -12,7 +12,7 @@ enum ReportValidator {
               report.imageFileName.isEmpty || URL(fileURLWithPath: report.imageFileName).lastPathComponent == report.imageFileName,
               report.skin.count == SkinDimension.allCases.count,
               Set(report.skin.map(\.dimension)).count == report.skin.count else { throw invalid() }
-        guard report.geometry.allSatisfy({ $0.value?.isFinite ?? true }),
+        guard (report.assessment?.isValid ?? true), report.geometry.allSatisfy({ $0.value?.isFinite ?? true }),
               report.skin.allSatisfy({ metric in
                   guard metric.items.count <= 100 else { return false }
                   return metric.score.map { $0.isFinite && (0...100).contains($0) } ?? true

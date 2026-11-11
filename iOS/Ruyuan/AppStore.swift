@@ -9,6 +9,7 @@ private struct PendingAnalysis: Codable {
     var consentID: String?
     var jobID: String?
     var cancelRequested: Bool = false
+    var assessment: SkinSelfAssessment? = nil
 }
 
 @MainActor
@@ -16,6 +17,10 @@ final class AppStore: ObservableObject {
     @Published private(set) var reports: [AnalysisReport] = []
     @Published var activeReport: AnalysisReport?
     @Published var isAnalyzing = false
+    @Published var showsAnalysis = false
+    @Published var analysisImage: UIImage?
+    @Published var scanReport: AnalysisReport?
+    @Published var analysisStartedAt = Date()
     @Published var stage: AnalysisStage = .preparing
     @Published var errorMessage: String?
     @Published var hasConsent: Bool
@@ -91,7 +96,7 @@ final class AppStore: ObservableObject {
         return UIImage(contentsOfFile: photos.appendingPathComponent(report.imageFileName).path)
     }
 
-    func analyze(image: UIImage) async {
+    func analyze(image: UIImage, assessment: SkinSelfAssessment? = nil) async {
         guard !isAnalyzing, !isDeleting, !isCancelling else { return }
         guard hasConsent else { errorMessage = "请先同意照片处理说明。"; return }
         guard pending == nil else {
@@ -101,6 +106,10 @@ final class AppStore: ObservableObject {
         let run = UUID()
         runID = run
         isAnalyzing = true
+        showsAnalysis = true
+        analysisImage = image
+        scanReport = nil
+        analysisStartedAt = Date()
         stage = .preparing
         let filename = UUID().uuidString + ".jpg"
         let destination = photos.appendingPathComponent(filename)
@@ -108,13 +117,14 @@ final class AppStore: ObservableObject {
             guard let self else { return }
             do {
                 let prepared = try await ImagePreprocessor.prepare(image)
+                self.analysisImage = prepared.image
                 try Task.checkCancellation()
                 try prepared.data.write(to: destination, options: [.atomic, .completeFileProtection])
                 try Task.checkCancellation()
-                let report: AnalysisReport
+                var report: AnalysisReport
                 if self.serverEnabled {
                     _ = try APIClient(url: self.serverURL, token: self.serverToken)
-                    self.pending = PendingAnalysis(key: UUID().uuidString, imageFileName: filename, serverURL: self.serverURL)
+                    self.pending = PendingAnalysis(key: UUID().uuidString, imageFileName: filename, serverURL: self.serverURL, assessment: assessment)
                     try self.savePending()
                     report = try await self.performRemote(data: prepared.data, run: run)
                 } else {
@@ -125,6 +135,7 @@ final class AppStore: ObservableObject {
                 }
                 try Task.checkCancellation()
                 guard self.runID == run else { return }
+                if let assessment { report = assessment.applying(to: report) }
                 try self.commit(report)
                 self.pending = nil
                 try self.savePending()
@@ -135,6 +146,7 @@ final class AppStore: ObservableObject {
                 }
                 guard self.runID == run else { return }
                 self.isAnalyzing = false
+                self.showsAnalysis = false
                 self.runID = nil
                 if !(error is CancellationError) {
                     self.errorMessage = error.localizedDescription + (self.pending == nil ? "" : "\n任务已保留，可在首页恢复；不必重新上传。")
@@ -152,6 +164,10 @@ final class AppStore: ObservableObject {
         let run = UUID()
         runID = run
         isAnalyzing = true
+        showsAnalysis = true
+        analysisImage = UIImage(contentsOfFile: photos.appendingPathComponent(saved.imageFileName).path)
+        scanReport = nil
+        analysisStartedAt = Date()
         stage = .preparing
         analysisTask = Task { [weak self] in
             guard let self else { return }
@@ -162,11 +178,13 @@ final class AppStore: ObservableObject {
                     self.pending = nil
                     try self.savePending()
                     self.isAnalyzing = false
+                    self.showsAnalysis = false
                     self.runID = nil
                     return
                 }
                 let data = try Data(contentsOf: self.photos.appendingPathComponent(saved.imageFileName))
-                let report = try await self.performRemote(data: data, run: run)
+                var report = try await self.performRemote(data: data, run: run)
+                if let assessment = saved.assessment { report = assessment.applying(to: report) }
                 try Task.checkCancellation()
                 guard self.runID == run else { return }
                 try self.commit(report)
@@ -176,6 +194,7 @@ final class AppStore: ObservableObject {
             } catch {
                 guard self.runID == run else { return }
                 self.isAnalyzing = false
+                self.showsAnalysis = false
                 self.runID = nil
                 if !(error is CancellationError) { self.errorMessage = "任务尚未完成：\(error.localizedDescription)" }
             }
@@ -237,6 +256,7 @@ final class AppStore: ObservableObject {
 
     func cancelAnalysis() {
         guard !isCancelling, !isDeleting else { return }
+        if !isAnalyzing, completedReport != nil { finishScanPresentation(); return }
         isCancelling = true
         isAnalyzing = true
         completedReport = nil
@@ -265,6 +285,9 @@ final class AppStore: ObservableObject {
             }
             isCancelling = false
             isAnalyzing = false
+            showsAnalysis = false
+            scanReport = nil
+            analysisImage = nil
         }
     }
 
@@ -298,12 +321,28 @@ final class AppStore: ObservableObject {
         isAnalyzing = false
         runID = nil
         completedReport = report
+        scanReport = report
+    }
+
+    func saveCalibratedReport(_ report: AnalysisReport) throws {
+        guard !isAnalyzing, !isDeleting, !isCancelling, reports.contains(where: { $0.id == report.id }) else {
+            throw AnalysisError.poorQuality("请先完成本次分析后再保存标定；演示数据不保存。")
+        }
+        try commit(report)
+        if activeReport?.id == report.id { activeReport = report }
+    }
+
+    func finishScanPresentation() {
+        guard !isAnalyzing, scanReport != nil else { return }
+        showsAnalysis = false
     }
 
     func presentCompletedReport() {
         guard !isAnalyzing, let report = completedReport else { return }
         completedReport = nil
         activeReport = report
+        scanReport = nil
+        analysisImage = nil
     }
 
     func showSample() { activeReport = SampleData.report }
@@ -334,6 +373,7 @@ final class AppStore: ObservableObject {
         try JSONEncoder().encode(next).write(to: root.appendingPathComponent("reports.json"), options: [.atomic, .completeFileProtection])
         reports = next
         defaults.removeObject(forKey: "server.report.\(report.id)")
+        defaults.removeObject(forKey: "report.feedback.v1.\(report.id)")
     }
 
     func deleteAll() {

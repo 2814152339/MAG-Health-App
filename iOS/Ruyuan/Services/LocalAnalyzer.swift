@@ -94,7 +94,7 @@ struct LocalAnalyzer {
               (lookup["faceContour"]?.count ?? 0) >= 8 else {
             throw AnalysisError.poorQuality("关键五官未完整定位，请移开遮挡、关闭美颜后重拍。")
         }
-        let geometry = geometryMetrics(lookup, width: width, height: height)
+        let geometry = geometryMetrics(lookup, width: width, height: height) + FaceGeometryAnalyzer.metrics(landmarks: lookup, width: width, height: height)
         try Task.checkCancellation()
 
         progress(.skin)
@@ -118,7 +118,7 @@ struct LocalAnalyzer {
             QualityCheck(id: "exposure", title: "面颊亮度代理", passed: true,
                          detail: "采样 RGB 加权亮度 \(percent(appearance.meanBrightness))；是照片编码值，不是照度或肤色分级。"),
             QualityCheck(id: "sharpness", title: "清晰度参考", passed: appearance.laplacianVariance >= 12,
-                         detail: String(format: "缩小图面部灰度拉普拉斯方差 %.1f；低于 12 仅提示可能模糊/低纹理，阈值未经临床或跨设备验证。", appearance.laplacianVariance))
+                         detail: String(format: "768像素长边工作图面部灰度拉普拉斯方差 %.1f；低于 12 仅提示可能模糊/低纹理，阈值未经临床或跨设备验证。", appearance.laplacianVariance))
         ]
         if appearance.clippedFraction > 0.10 {
             quality.append(QualityCheck(id: "clipping", title: "高光/暗部截断", passed: false,
@@ -132,29 +132,21 @@ struct LocalAnalyzer {
             },
             note: "由真实二维特征点形成；轮廓不包含发际线。坐标为原图左上角归一化坐标。", source: featureSource
         )]
-        overlays.append(OverlayLayer(id: "cheek-sampling", title: "面颊采样范围", colorHex: "6C9F94",
-            kind: .polygons, paths: appearance.regionPaths,
-            note: "根据眼、唇位置及人脸框选取的双侧椭圆区域；不是皮肤分割，可能包含妆容、毛发或阴影。", source: featureSource + " + 本地几何采样 v1"))
-        overlays.append(OverlayLayer(id: "rgb-highlights", title: "RGB 高亮外观", colorHex: "D9B86C",
-            kind: .polygons, paths: appearance.highlightPaths,
-            note: "仅标出面颊网格样本：RGB 亮度 ≥ 0.80、最大通道 ≥ 0.92、通道饱和度 ≤ 0.25；不代表油脂或含水量。空图层表示未检出符合阈值的样本。",
-            source: "本地 sRGB 外观阈值 v1；非临床指标"))
-        overlays.append(OverlayLayer(id: "rgb-redness", title: "相对偏红外观", colorHex: "C67B7A",
-            kind: .polygons, paths: appearance.rednessPaths,
-            note: String(format: "面颊 R/(R+G+B) 中位基线 %.3f；高于基线 0.035 且 R > 1.08G、R > 1.08B、亮度 > 0.10 的样本。仅相对照片色差，不能判断敏感、炎症或红血丝。", appearance.redBaseline),
-            source: "本地相对 RGB 外观阈值 v1；非临床指标"))
+        let detailed = AppearanceAnalyzer.analyze(raster: raster, landmarks: lookup, faceBox: box)
+        overlays += detailed.overlays
+        overlays += FaceGeometryAnalyzer.overlays(landmarks: lookup, width: width, height: height)
 
         progress(.report)
         try Task.checkCancellation()
         let caution = quality.contains { !$0.passed }
         return AnalysisReport(
             id: reportID, createdAt: Date(), origin: .local,
-            status: caution ? "已完成 · 有拍摄质量提示" : "已完成 · 外观基线",
+            status: caution ? "已完成 · 有拍摄质量提示" : "已完成 · 照片外观参考",
             imageFileName: imageFileName, imageWidth: width, imageHeight: height,
-            geometry: geometry, skin: skinMetrics(appearance), landmarks: landmarkPaths,
+            geometry: geometry, skin: detailed.metrics, landmarks: landmarkPaths,
             overlays: overlays, quality: quality,
-            modelVersion: featureSource + "; RGB appearance v1",
-            summary: "已完成真实五官定位与照片面颊 RGB 外观采样。比例仅是二维投影，受角度与表情影响；高亮、偏红不等于出油或敏感。水分、皮脂、敏感、毛孔、皱纹和衰老程度未测量，所有皮肤分数均留空。\(caution ? "本次存在质量提示，建议同光线、同角度复拍再比较。" : "建议无美颜、同光线和同距离留存外观基线。")"
+            modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2",
+            summary: detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
         )
     }
 
@@ -185,6 +177,7 @@ struct LocalAnalyzer {
             ("leftEyebrow", landmarks.leftEyebrow, false),
             ("rightEyebrow", landmarks.rightEyebrow, false),
             ("nose", landmarks.nose, true), ("noseCrest", landmarks.noseCrest, false),
+            ("leftPupil", landmarks.leftPupil, false), ("rightPupil", landmarks.rightPupil, false),
             ("outerLips", landmarks.outerLips, true), ("innerLips", landmarks.innerLips, true)
         ]
         return regions.compactMap { id, region, closed in
@@ -325,7 +318,7 @@ struct LocalAnalyzer {
     }
 
     static func makeRaster(_ image: CGImage) -> Raster? {
-        let scale = min(1, 384 / Double(max(image.width, image.height)))
+        let scale = min(1, 768 / Double(max(image.width, image.height)))
         let width = max(1, Int((Double(image.width) * scale).rounded()))
         let height = max(1, Int((Double(image.height) * scale).rounded()))
         var pixels = [UInt8](repeating: 0, count: width * height * 4)

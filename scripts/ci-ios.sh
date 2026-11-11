@@ -143,3 +143,10 @@ run_logged test xcodebuild "${ARGS[@]}" -parallel-testing-enabled NO \
   -maximum-concurrent-test-simulator-destinations 1 \
   -resultBundlePath "$OUT/Test.xcresult" test
 TEST_STATUS=passed
+
+# UI attachments contain only the synthetic sample report, never a user's photo.
+if xcrun xcresulttool export attachments --path "$OUT/Test.xcresult" --output-path "$OUT/TestAttachments" > "$OUT/attachment-export.log" 2>&1; then
+  run_logged package-attachments ditto -c -k --sequesterRsrc --keepParent "$OUT/TestAttachments" "$OUT/TestAttachments.zip"
+else
+  echo 'UI screenshot attachment export unavailable; original Test.xcresult remains available.' >> "$OUT/attachment-export.log"
+fi

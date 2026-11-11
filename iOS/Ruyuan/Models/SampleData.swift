@@ -10,7 +10,11 @@ enum SampleData {
             .sensitivity: [SkinItem(id: "sample-redness", title: "可见泛红", valueText: "局部区域 · 演示", note: "可见颜色与敏感倾向分开记录。", overlayID: "sample-redness")],
             .smoothness: [SkinItem(id: "sample-pores", title: "毛孔", valueText: "局部可见 · 演示", note: "正式计数来自已接入的专项模型。", overlayID: nil)],
             .aging: [SkinItem(id: "sample-lines", title: "额部纹理", valueText: "轻微 · 演示", note: "演示线段不对应任何真实用户照片。", overlayID: "sample-lines"),
-                     SkinItem(id: "sample-eyes", title: "眼周", valueText: "局部色差 · 演示", note: "正式报告按模型完成情况显示。", overlayID: "sample-eyes")]
+                     SkinItem(id: "sample-eyes", title: "眼周", valueText: "局部色差 · 演示", note: "正式报告按模型完成情况显示。", overlayID: "sample-eyes"),
+                     SkinItem(id: "line-forehead", title: "额部线纹响应", valueText: "3.0% · 演示", note: "合成演示覆盖率，不是用户检测数据。", overlayID: "sample-lines"),
+                     SkinItem(id: "line-glabella", title: "眉间线纹响应", valueText: "1.2% · 演示", note: "合成演示覆盖率，不是用户检测数据。", overlayID: "sample-lines"),
+                     SkinItem(id: "line-nasolabial", title: "鼻唇侧线纹响应", valueText: "4.5% · 演示", note: "合成演示覆盖率，不是用户检测数据。", overlayID: "sample-lines"),
+                     SkinItem(id: "line-eye", title: "眼外侧线纹响应", valueText: "2.1% · 演示", note: "合成演示覆盖率，不是用户检测数据。", overlayID: "sample-eyes")]
         ]
         func p(_ x: Double, _ y: Double) -> NormalizedPoint { NormalizedPoint(x: x, y: y) }
         return AnalysisReport(

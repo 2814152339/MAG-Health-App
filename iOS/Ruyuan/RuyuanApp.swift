@@ -20,6 +20,9 @@ struct RootView: View {
     @State private var consentAction: Int?
     @State private var pendingInput: UIImage?
     @State private var approvedCaptureAction: Int?
+    @State private var showAssessment = false
+    @State private var selectedAssessment: SkinSelfAssessment?
+    @State private var assessmentReady = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -27,13 +30,13 @@ struct RootView: View {
                 HomeView(onCapture: { requestCapture(0) }, onImport: { requestCapture(1) },
                          onReport: { store.activeReport = $0 })
             }
-            .tabItem { Label("发现", systemImage: "sparkles") }.tag(0)
+            .tabItem { Label("测肤", systemImage: "viewfinder") }.tag(0)
             NavigationStack { HistoryView(onReport: { store.activeReport = $0 }) }
                 .tabItem { Label("报告", systemImage: "chart.xyaxis.line") }.tag(1)
             NavigationStack { SettingsView() }
                 .tabItem { Label("我的", systemImage: "person.crop.circle") }.tag(2)
         }
-        .tint(Color(red: 0.48, green: 0.35, blue: 0.65))
+        .tint(RuyuanStyle.purple)
         .fullScreenCover(isPresented: $showCamera, onDismiss: consumeInputIfReady) {
             CameraView { image in
                 pendingInput = image
@@ -50,8 +53,25 @@ struct RootView: View {
             }
             .interactiveDismissDisabled()
         }
-        .fullScreenCover(isPresented: $store.isAnalyzing, onDismiss: { store.presentCompletedReport() }) {
+        .fullScreenCover(isPresented: $store.showsAnalysis, onDismiss: { store.presentCompletedReport() }) {
             AnalysisProgressView().interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $showAssessment, onDismiss: {
+            guard assessmentReady, let image = pendingInput else { return }
+            pendingInput = nil
+            assessmentReady = false
+            Task { await store.analyze(image: image, assessment: selectedAssessment) }
+        }) {
+            SkinAssessmentView(onContinue: { assessment in
+                selectedAssessment = assessment
+                assessmentReady = true
+                showAssessment = false
+            }, onCancel: {
+                pendingInput = nil
+                assessmentReady = false
+                selectedAssessment = nil
+                showAssessment = false
+            })
         }
         .sheet(item: $store.activeReport) { report in
             NavigationStack {
@@ -86,8 +106,10 @@ struct RootView: View {
 
     private func consumeInputIfReady() {
         guard !showCamera, !showPicker, let image = pendingInput else { return }
-        pendingInput = nil
-        Task { await store.analyze(image: image) }
+        _ = image
+        selectedAssessment = nil
+        assessmentReady = false
+        showAssessment = true
     }
 
     private func openCapture(_ action: Int) {
