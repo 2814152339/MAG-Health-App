@@ -19,7 +19,6 @@ jobs:
     env:
       # An installed, stable Xcode on the macos-15 image; no SDK downloads.
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      CI_ARTIFACTS_DIR: ${{ runner.temp }}/ruyuan-ci
     steps:
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,6 +26,8 @@ jobs:
           persist-credentials: false
 
       - name: Compile and run XCTest on an available iPhone simulator
+        env:
+          CI_ARTIFACTS_DIR: ${{ runner.temp }}/ruyuan-ci
         shell: bash
         run: bash scripts/ci-ios.sh
 
