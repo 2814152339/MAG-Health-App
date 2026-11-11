@@ -135,6 +135,9 @@ struct OverlayView: View {
                 controls
             }
             .background(.black)
+            // VStack is a layout container, not automatically an accessibility
+            // node. Expose a stable group without combining/hiding its controls.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("overlayViewer")
             .navigationTitle(selectedLayer?.title ?? "原图")
             .navigationBarTitleDisplayMode(.inline)

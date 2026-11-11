@@ -14,6 +14,7 @@ fi
 mkdir -p "$OUT"
 BUILD_STATUS=not_run
 TEST_STATUS=not_run
+ATTACHMENT_STATUS=not_run
 DEVICE=""
 BOOTED_BY_SCRIPT=0
 
@@ -37,6 +38,23 @@ finish() {
   local status=$?
   trap - EXIT
   set +e
+  # set -e jumps here as soon as XCTest fails. Export diagnostics in the EXIT
+  # handler, not after the test command, so failure screenshots are retained too.
+  if [[ -d "$OUT/Test.xcresult" ]]; then
+    if xcrun xcresulttool export attachments --path "$OUT/Test.xcresult" \
+      --output-path "$OUT/TestAttachments" > "$OUT/attachment-export.log" 2>&1; then
+      if ditto -c -k --sequesterRsrc --keepParent "$OUT/TestAttachments" \
+        "$OUT/TestAttachments.zip" >> "$OUT/attachment-export.log" 2>&1; then
+        ATTACHMENT_STATUS=passed
+      else
+        ATTACHMENT_STATUS=packaging_failed
+        echo 'Attachment ZIP packaging failed; original Test.xcresult is retained.' >> "$OUT/attachment-export.log"
+      fi
+    else
+      ATTACHMENT_STATUS=unavailable
+      echo 'UI attachment export unavailable; original Test.xcresult is retained.' >> "$OUT/attachment-export.log"
+    fi
+  fi
   # Zip bundles to preserve their internal layout/permissions. Only these
   # explicitly named outputs are uploaded, never the checkout or private data.
   local bundle
@@ -50,8 +68,8 @@ finish() {
   if [[ "$BOOTED_BY_SCRIPT" -eq 1 && -n "$DEVICE" ]]; then
     xcrun simctl shutdown "$DEVICE" >> "$OUT/simulator-shutdown.log" 2>&1
   fi
-  printf 'build=%s\ntests=%s\nexit_code=%s\n' \
-    "$BUILD_STATUS" "$TEST_STATUS" "$status" | tee "$OUT/status.txt"
+  printf 'build=%s\ntests=%s\nattachment_export=%s\nexit_code=%s\n' \
+    "$BUILD_STATUS" "$TEST_STATUS" "$ATTACHMENT_STATUS" "$status" | tee "$OUT/status.txt"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       printf '## 如愿美学 · iOS 模拟器\n\n'
@@ -143,10 +161,3 @@ run_logged test xcodebuild "${ARGS[@]}" -parallel-testing-enabled NO \
   -maximum-concurrent-test-simulator-destinations 1 \
   -resultBundlePath "$OUT/Test.xcresult" test
 TEST_STATUS=passed
-
-# UI attachments contain only the synthetic sample report, never a user's photo.
-if xcrun xcresulttool export attachments --path "$OUT/Test.xcresult" --output-path "$OUT/TestAttachments" > "$OUT/attachment-export.log" 2>&1; then
-  run_logged package-attachments ditto -c -k --sequesterRsrc --keepParent "$OUT/TestAttachments" "$OUT/TestAttachments.zip"
-else
-  echo 'UI screenshot attachment export unavailable; original Test.xcresult remains available.' >> "$OUT/attachment-export.log"
-fi

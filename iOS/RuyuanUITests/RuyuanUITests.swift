@@ -3,7 +3,22 @@ import XCTest
 /// Uses only the bundled vector illustration and explicitly synthetic sample data.
 /// Never imports a photo, opens the camera, or sends personal data to a server.
 final class RuyuanUITests: XCTestCase {
+    private var recordingFailure = false
     override func setUpWithError() throws { continueAfterFailure = false }
+
+    override func record(_ issue: XCTIssue) {
+        if !recordingFailure {
+            recordingFailure = true
+            let app = XCUIApplication()
+            capture("failure-screen", app: app)
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "failure-accessibility-tree"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            recordingFailure = false
+        }
+        super.record(issue)
+    }
 
     func testHomeAndSampleReportFlow() {
         let app = XCUIApplication()
@@ -56,13 +71,18 @@ final class RuyuanUITests: XCTestCase {
         capture("detail-aging", app: app)
 
         tapDetailTab("tone", app: app)
-        let preview = app.buttons["放大肤色 · 演示图层"].firstMatch
+        // The detail card and the all-layer gallery intentionally share a spoken
+        // label. Target the particular card, not the first duplicate label.
+        let preview = identified("detail-overlay-sample-tone", in: app)
         XCTAssertTrue(reveal(preview, in: app))
+        XCTAssertEqual(preview.label, "放大肤色 · 演示图层")
+        capture("before-overlay", app: app)
         preview.tap()
-        XCTAssertTrue(identified("overlayViewer", in: app).waitForExistence(timeout: 5))
         let overlayNav = app.navigationBars["肤色 · 演示"]
-        XCTAssertTrue(overlayNav.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["演示图层 · 非真实检测结果"].exists)
+        XCTAssertTrue(overlayNav.waitForExistence(timeout: 5), "The layer tap must actually present the full-screen viewer.")
+        XCTAssertTrue(app.staticTexts["演示图层 · 非真实检测结果"].waitForExistence(timeout: 3))
+        XCTAssertTrue(identified("overlayViewer", in: app).waitForExistence(timeout: 5),
+                      "The viewer must expose its stable accessibility group as well as its navigation bar.")
         capture("overlay", app: app)
 
         let original = app.segmentedControls.buttons["原图"].firstMatch

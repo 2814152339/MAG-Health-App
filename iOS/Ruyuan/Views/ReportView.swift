@@ -503,7 +503,7 @@ private struct ReportDetailSheet: View {
                               systemImage: layer == nil ? "photo" : "circle.lefthalf.filled")
                             .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    overlayThumbnail(layer, width: 62, height: 78)
+                    overlayThumbnail(layer, width: 62, height: 78, accessibilityID: "detail-overlay-\(item.id)")
                 }
                 if let layer {
                     HStack(spacing: 5) {
@@ -545,7 +545,8 @@ private struct ReportDetailSheet: View {
         }
     }
 
-    private func overlayThumbnail(_ layer: OverlayLayer?, width: CGFloat, height: CGFloat) -> some View {
+    private func overlayThumbnail(_ layer: OverlayLayer?, width: CGFloat, height: CGFloat,
+                                  accessibilityID: String? = nil) -> some View {
         Button { inspection = InspectionTarget(layerID: layer?.id) } label: {
             ZStack(alignment: .topTrailing) {
                 ReportPhotoView(report: report, image: store.image(for: report), layers: layer.map { [$0] } ?? [])
@@ -560,6 +561,7 @@ private struct ReportDetailSheet: View {
             }.clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain).accessibilityLabel(layer.map { "放大\($0.title)图层" } ?? "放大本次原始照片")
+        .accessibilityIdentifier(accessibilityID ?? "gallery-overlay-\(layer?.id ?? "original")")
     }
 
     private var geometryContent: some View {
