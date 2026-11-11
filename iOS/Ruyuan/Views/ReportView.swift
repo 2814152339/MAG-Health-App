@@ -559,8 +559,16 @@ private struct ReportDetailSheet: View {
                     Text(layer == nil ? "原图" : "图层").font(.system(size: 8)).foregroundStyle(.white)
                         .padding(3).frame(maxWidth: .infinity).background(.black.opacity(0.5))
                 }
-            }.clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            // The caption's maxWidth must resolve inside the thumbnail, not the
+            // containing report row. Otherwise the AX button expands left while
+            // its visible photo stays right, and a normal center tap hits air.
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+        .frame(width: width, height: height)
+        .contentShape(Rectangle())
         .buttonStyle(.plain).accessibilityLabel(layer.map { "放大\($0.title)图层" } ?? "放大本次原始照片")
         .accessibilityIdentifier(accessibilityID ?? "gallery-overlay-\(layer?.id ?? "original")")
     }

@@ -24,6 +24,8 @@ final class RuyuanUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(app.buttons["sampleReportButton"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["startCaptureButton"].isHittable, "Start detection must be visible on the initial small-screen viewport.")
+        XCTAssertTrue(app.buttons["importPhotoButton"].isHittable)
         capture("home", app: app)
         openSample(in: app)
         XCTAssertTrue(app.staticTexts["这是一份演示报告。分数、比例与图层均为示例，不代表你或任何真实人物的检测结果。"].exists)
@@ -86,6 +88,10 @@ final class RuyuanUITests: XCTestCase {
         let preview = identified("detail-overlay-sample-tone", in: app)
         XCTAssertTrue(reveal(preview, in: app))
         XCTAssertEqual(preview.label, "放大肤色 · 演示图层")
+        XCTAssertGreaterThan(preview.frame.width, 40, "The actual thumbnail must have a visible hit region.")
+        XCTAssertLessThanOrEqual(preview.frame.width, 80,
+                                 "The 62-point detail thumbnail must not expand across blank row space.")
+        XCTAssertEqual(preview.frame.height, 78, accuracy: 2)
         capture("before-overlay", app: app)
         preview.tap()
         let overlayNav = app.navigationBars["肤色 · 演示"]

@@ -8,20 +8,30 @@ struct HomeView: View {
     let onReport: (AnalysisReport) -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                header
-                hero
-                if store.hasPendingAnalysis { pendingAnalysisCard }
-                captureActions
-                preparationGuide
-                sampleEntry
-                if !store.reports.isEmpty { recentReports }
-                footer
+        GeometryReader { proxy in
+            let compact = proxy.size.height <= 700
+            ScrollView {
+                VStack(alignment: .leading, spacing: compact ? 18 : 26) {
+                    header
+                    hero(compact: compact)
+                    if store.hasPendingAnalysis { pendingAnalysisCard }
+                    preparationGuide
+                    sampleEntry
+                    if !store.reports.isEmpty { recentReports }
+                    footer
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, compact ? 12 : 16)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 16)
-            .padding(.bottom, 32)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                captureActions
+                    .padding(.horizontal, 22)
+                    .padding(.top, 10)
+                    .padding(.bottom, 10)
+                    .background(RuyuanStyle.background.opacity(0.98))
+                    .overlay(alignment: .top) { RuyuanStyle.line.frame(height: 0.5) }
+            }
         }
         .background(RuyuanStyle.background)
         .toolbar(.hidden, for: .navigationBar)
@@ -53,30 +63,34 @@ struct HomeView: View {
         }
     }
 
-    private var hero: some View {
-        VStack(spacing: 14) {
+    private func hero(compact: Bool) -> some View {
+        VStack(spacing: compact ? 10 : 14) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text("AI").italic().foregroundStyle(RuyuanStyle.purple)
                 Text("测肤质").foregroundStyle(RuyuanStyle.ink)
-            }.font(.system(size: 39,weight:.heavy)).padding(.top, 18)
-            Text("看见肤质细节，了解面部比例")
-                .font(.subheadline).foregroundStyle(RuyuanStyle.muted)
+            }.font(.system(size: compact ? 33 : 39,weight:.heavy)).padding(.top, compact ? 12 : 18)
+            if !compact {
+                Text("看见肤质细节，了解面部比例")
+                    .font(.subheadline).foregroundStyle(RuyuanStyle.muted)
+            }
             ZStack {
-                Circle().fill(.white.opacity(0.5)).frame(width:250,height:250).offset(y:22)
-                Circle().stroke(.white.opacity(0.9),lineWidth:12).frame(width:230,height:270).offset(y:15)
-                SampleFaceDiagram(showsGuides:true).frame(width:200,height:280)
-                Text("检测肤质").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:-90,y:-30)
-                Text("面部比例分析").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:75,y:-83)
-                Text("皮肤外观评估").font(.caption).foregroundStyle(RuyuanStyle.muted).padding(8).background(.white.opacity(0.86),in:Capsule()).offset(x:65,y:75)
-            }.frame(height:300).accessibilityHidden(true)
+                Circle().fill(.white.opacity(0.5)).frame(width:compact ? 155 : 250,height:compact ? 155 : 250).offset(y:compact ? 10 : 22)
+                Circle().stroke(.white.opacity(0.9),lineWidth:compact ? 8 : 12).frame(width:compact ? 150 : 230,height:compact ? 170 : 270).offset(y:compact ? 8 : 15)
+                SampleFaceDiagram(showsGuides:true).frame(width:compact ? 125 : 200,height:compact ? 175 : 280)
+                Text("检测肤质").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? -70 : -90,y:compact ? -20 : -30)
+                Text("面部比例分析").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? 63 : 75,y:compact ? -54 : -83)
+                Text("皮肤外观评估").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? 58 : 65,y:compact ? 49 : 75)
+            }.frame(height:compact ? 185 : 300).accessibilityHidden(true)
             Text("油光 · 肤色 · 纹理 · 眼周 · 五官比例")
-                .font(.caption.weight(.medium)).foregroundStyle(.white)
-                .padding(.horizontal,16).padding(.vertical,10)
+                .font(compact ? .system(size: 10, weight: .medium) : .caption.weight(.medium)).foregroundStyle(.white)
+                .padding(.horizontal,16).padding(.vertical,compact ? 8 : 10)
                 .background(RuyuanStyle.purple,in:Capsule())
-            Label("请在光线充足的环境中正脸居中拍摄",systemImage:"viewfinder")
-                .font(.caption2).foregroundStyle(RuyuanStyle.purple).padding(.top,12)
+            if !compact {
+                Label("请在光线充足的环境中正脸居中拍摄",systemImage:"viewfinder")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.purple).padding(.top,12)
+            }
         }
-        .frame(maxWidth:.infinity).padding(.horizontal,12).padding(.bottom,25)
+        .frame(maxWidth:.infinity).padding(.horizontal,12).padding(.bottom,compact ? 16 : 25)
         .background(LinearGradient(colors:[Color(hex:"E6E0FF"),Color(hex:"F5F3FF")],startPoint:.topLeading,endPoint:.bottomTrailing),in:RoundedRectangle(cornerRadius:24))
     }
 
