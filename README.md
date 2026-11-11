@@ -1,76 +1,85 @@
 # 如愿美学 · 原生 iOS App
 
-基于《如愿美学 iOS 测肤 App 技术方案（2026-11-10）》生成的**首版可开发工程**。SwiftUI 原生界面，最低 iOS 17，仅 iPhone 竖屏；不是网页套壳。工程独立保存在本目录。
+**v0.2 · 按参考视频逐项补齐中的真机版本。** SwiftUI 原生界面，最低 iOS 17，仅 iPhone 竖屏；不是网页套壳。本工程独立保存在如愿美学项目目录，功能与原规划 F01–F35 的对应范围见 [功能对照](docs/功能对照.md)。
 
-## Windows 电脑 + 自己的 iPhone（主路径）
+## Windows + 自己的 iPhone
 
 1. 在 [iPhone 真机云端构建](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/workflows/ios-device.yml) 下载成功运行中的 `Ruyuan-iPhone-Unsigned-运行编号-尝试编号` 产物，解压外层 ZIP 取出 `.ipa`。
-2. 用 Windows 本地签名工具和你自己的 Apple ID 签名，通过 USB 安装到 iOS 17 及以上的 iPhone；无需先购买开发者会员。
-3. 按 [iPhone 安装指南](docs/iPhone安装.md) 完成电脑信任、本人账号信任及开发者模式。账号密码只在你自己的电脑输入，不提供给助理或仓库。
+2. 用 Windows 本地签名工具和自己的 Apple ID 签名，通过 USB 安装到 iOS 17 及以上的 iPhone，无需先购买开发者会员。
+3. 按 [iPhone 安装指南](docs/iPhone安装.md) 完成电脑信任、本人签名账号信任及开发者模式。账号密码仅在本机签名工具中输入。
 
-**未签名 IPA 不能直接点击安装。** 云端只负责真机程序编译与打包，不会替你连接手机或完成签名。[本次真机云编译成功运行](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43052667325)；签名安装及真实手机测试仍未执行。
+**当前交付状态：**用户已自签安装旧 v0.1，并反馈与视频差距较大；本次针对这些缺项开发 v0.2。[v0.2 真机 Release 未签名 IPA 云编译已通过](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43066073838)，对应 commit `e2fcad093791aa55fbf3bc51d719b75933373241`。新 v0.2 尚未确认安装，也尚未完成真实 iPhone 相机与交互验收。
 
-## 有 Mac 时打开工程（可选）
+未签名 IPA 需要本地签名后安装；云编译成功不等于已经安装或完成真机测试。
 
-1. 将整个文件夹复制到 Mac。安装并打开完整 Xcode 16 或更新版本，完成首次组件安装。
-2. 双击 **`iOS/Ruyuan.xcodeproj`**。
-3. 选择一个已安装的 iPhone 模拟器，按 **⌘R**。首页「先看一份示例报告」可直接体验报告、雷达图、图层与 PDF 导出。
-4. 真机拍照：连接 iPhone，在 **Signing & Capabilities → Team** 选择你的开发团队；根据团队需要更改 Bundle Identifier，然后运行。相机需真机验证；模拟器可导入照片。
+## v0.2 已写入的流程与交互
 
-不需要 CocoaPods、付费 API、云端 Key 或后端，默认本机流程即可使用。`.command` 是辅助入口，直接打开 `.xcodeproj` 更简单。
+- 首页、历史报告、我的与设置三个原生主 Tab；首次使用说明、授权与相册单图选择。
+- AVFoundation 前后摄像头、重拍确认；**实时预览帧由 Vision 提供单人、居中、距离与姿态引导**，不是身份识别，不保存预览视频。
+- 照片方向归一化、最长边 2560 的处理版 JPEG、去除来源元数据；分析、展示与持久保存采用同一张处理照片。
+- **真实原照上的 10 个扫描分镜**：点位、轮廓下颌、纵向比例、五眼、三角下巴、眉眼、鼻唇、纹理、点状外观、眼周。分析阶段先显示真实任务状态，结果完成后播放对应真实点位与图层；支持暂停、继续与跳过，不拿播放百分比冒充计算进度。
+- **33 项新增二维几何条目 + 原有 19 项条目**，包含轮廓趋势、下颌折角、颏区比例、三角、五眼、眉弓、眼轮廓夹角、鼻唇等。52 是条目数，包含缺项与定义不同的相关指标，不代表 52 项都成功测出。
+- 手动标记发际线后补充三庭；本人填写**实测瞳距**且照片检测到双瞳孔时，补充照片平面毫米估算。不用人均默认瞳距，也不把人脸框顶部当发际线。
+- **11 个真实像素外观图层**：高亮、相对偏红、色沉候选、面颊暗点、鼻部暗点、四区线纹、眼下明暗区域、有效采样区；未达到阈值即为空图层。
+- 聊天式报告、模糊隐私照片卡、摘要与五维列表、**五个 Tab 的详情弹层**、雷达图、分区线纹柱状图、分项缩略图和计算依据。
+- 黑底全屏查看器，原图/图层切换、图例、缩放拖动、归位和点位查看。
+- 本地赞踩与文字反馈；反馈保存在本机，不声称已提交服务器。历史记录、删除、PDF 导出与系统分享保留。
+- 可选自托管后端、Keychain 令牌、持久任务键/ID、前台恢复、取消与幂等处理。
 
-## 本版已经写入工程
+## 本机分析与分数来源
 
-- 三个原生主 Tab：首页、历史报告、我的与设置。
-- 使用说明与授权、前后摄像头、拍照、重拍、确认、系统相册单图选择。
-- 统一照片方向、缩图、去除来源元数据，后续分析与存储采用同一张图片。
-- Apple Vision 真实人脸/五官点位、单人/姿态/曝光/尺寸检查、19 项二维几何条目。
-- 面颊区域真实 RGB 采样，生成高亮/相对偏红图层、亮度与均匀度参考；每项注明算法来源和含义。
-- 五维报告页面、分项切换、几何点位、图层放大、缩放拖动、原图/覆盖层切换。
-- 历史记录落盘、单份删除、全部清除、PDF 导出和 iOS 系统分享。
-- 可选自托管后端连接、Keychain 令牌、持久任务键与任务 ID、前台恢复、取消与重复请求处理。
-- 独立的演示报告：固定演示分数与矢量插画，不保存为用户检测记录。
+本机工作图最长边为 768；在实际像素上计算 **sRGB/D65 Lab、ITA 参考角、高亮/偏红覆盖、相对色沉与细点候选、额部/眉间/鼻唇侧/眼外侧线纹响应、眼下与双颊的 L* 明暗差**。几何排除眼、眉、嘴唇、鼻孔与下巴区域，并使用面颊颜色门控；这不是已训练的语义皮肤分割。
 
-## 当前算法输出
+报告分别保留两类来源：
 
-真实照片的本机输出是 **五官几何＋RGB 外观基线**。高亮不命名为皮脂量，偏红不命名为敏感诊断。五项皮肤评分为缺省值，报告显示「未评分」，不生成假的综合分或肤龄。
+- **`photoHeuristic`**：色彩均匀、纹理平整和线纹的照片视觉参考分，逐项给出实际公式。细点采样要求工作图长边至少 512、面部横宽至少 280 像素；不足时不强行计数或生成相应平整度分。
+- **`selfReport`**：自愿问卷填写的干燥、出油、刺激反应频率，用独立规则整理水油与耐受感参考分；填写年龄仅作为本人自述年龄，不推断为肤龄。
 
-计划中的痘/黑头/毛孔/皱纹/眼周专项模型、含水/屏障预测、三庭发际线、标定毫米、人群常模和专业评分，分别保留接入位置与功能清单，见 `docs/功能对照.md`。目前没有捆绑训练完成的专项测肤模型。
+照片观察与问卷不混成同一数据来源。五维全部有值才计算算术均值；缺项留空，不补零、不套示例值。图层候选不包装成已经验证的私有模型精确检出。
+
+### 仍需接入的能力
+
+专项痘型分类、经标注模型验证的真实毛孔/黑头检测、眼袋/泪沟/黑眼圈成因分类、肤龄与同龄常模、仪器含水量/皮脂量、皮肤屏障与弹性检测、自动发际线、真实三维骨骼尺寸、侧面鼻唇角仍未实现。当前版本不是参考产品全部算法与全部功能的 100% 复刻。
+
+[开源模型核验](docs/开源模型核验.md) 分开记录已实际接入的算法与仅完成调研的候选模型、权重体积及许可证；候选模型公开不等于已经部署。
 
 ## 可选后端
 
-见 `docs/backend.md`。附带 FastAPI、持久 SQLite 任务账本、私有本地图片、单进程 worker、同意记录、幂等上传、按操作键取消与完整报告契约。
+见 [后端说明](docs/backend.md)。附带 FastAPI、持久 SQLite 任务账本、私有本地图片、单进程 worker、同意记录、幂等上传、按操作键取消与完整报告契约。
 
-默认不上传照片。启用服务器前，在「我的」填写服务器地址与令牌并保存。服务端的 MediaPipe 模型按文档配置；未配置时明确返回失败。后端是开发联调实现，计划中的 PostgreSQL/Celery/S3、多账户和运营后台列入下一阶段。
+默认不上传照片。启用服务器前，在「我的」填写服务器地址与令牌并保存。服务端 MediaPipe 模型须按文档配置；未配置时返回真实失败。生产 PostgreSQL/Celery/S3、多账户与运营后台仍属后续建设范围。
 
 ## 构建与测试
 
-GitHub 私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。推送 `main` 且改动 iOS 源码、真机构建脚本或真机工作流时，自动构建 **iPhone 未签名 IPA**，也可手动运行。模拟器 XCTest 保留为手动运行，不再随 push 自动触发；见 [云端构建说明](docs/云端构建.md)。
+私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。修改 iOS 源码、真机构建脚本或工作流后推送 `main`，会生成 iPhone 未签名 IPA；也可手动构建。XCTest 云端工作流保留手动运行，见 [云端构建说明](docs/云端构建.md)。
 
-Mac 终端可在本目录复现：
+- **v0.2 真机 Release：已通过。**[运行 43066073838](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43066073838)，commit `e2fcad093791aa55fbf3bc51d719b75933373241`；包括实际 iphoneos 编译、arm64/平台检查及 IPA 打包。
+- **v0.2 测试：已新增至 36 个单元测试 + 2 个 UI 测试；本次更新文档时仍在云端运行，尚不记为通过。**[运行 43066129825](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43066129825)。
+- Windows 后端此前 27 项回归通过；既有 v0.1 的 11 单元 + 1 UI 成功结果仅作历史记录，不代替 v0.2 回归。
+- 用户已安装的是旧 v0.1；新 v0.2 安装、真实手机相机/方向/耗时验收、TestFlight 与正式发布尚待完成。
+
+有 Mac 时可直接打开 `iOS/Ruyuan.xcodeproj`；在终端可复现：
 
 ```bash
-bash scripts/ci-ios-device.sh      # 真机 Release 未签名 IPA，仍需本地签名安装
-bash scripts/build-mac.sh          # 无签名模拟器构建
-bash scripts/build-mac.sh --test   # 自动选择已安装的 iPhone 模拟器运行 XCTest
+bash scripts/ci-ios-device.sh      # 真机 Release 未签名 IPA
+bash scripts/build-mac.sh          # 开发用模拟器构建
+bash scripts/build-mac.sh --test   # XCTest；测试环境不作为用户安装包
 ```
 
-工程已包含 11 个单元测试与 1 个 UI 测试。修改 Swift 文件列表后，使用 `python3 scripts/generate_xcode_project.py` 重新生成工程。
-
-**验证结果：**[真机未签名 IPA 云编译成功](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43052667325)，commit `a85391f374935bcba5058eebceae4632b7ebff09`，含编译、二进制/包校验及产物上传。Windows 后端 27 项测试通过；既有云端 Xcode 16.4 / iOS 18.5 模拟器编译及 11 单元＋1 UI 测试全部通过，[原成功记录保留](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43048093223)。签名安装、真实手机/相机验收及 TestFlight 尚未执行。`docs/验证记录.md` 记录具体范围；发布前执行 `docs/发布检查.md`。
+修改 Swift 文件列表后运行 `python3 scripts/generate_xcode_project.py` 生成工程引用。默认本机流程不需要 CocoaPods、商业 API、云端 Key 或后端。进一步验证范围见 [验证记录](docs/验证记录.md)，发布前执行 [发布检查](docs/发布检查.md)。
 
 ## 工程目录
 
 ```text
-iOS/Ruyuan.xcodeproj       直接打开的 Xcode 工程（共享 Scheme）
-iOS/Ruyuan/               SwiftUI、相机、Vision、本地存储、API、PDF
-iOS/RuyuanTests/          算法坐标与报告契约单元测试
-iOS/RuyuanUITests/        首页 → 演示报告 → 历史的 UI 冒烟测试
+iOS/Ruyuan.xcodeproj       共享 Scheme 的原生 Xcode 工程
+iOS/Ruyuan/               SwiftUI、相机引导、Vision、外观算法、手动标定、存储与 PDF
+iOS/RuyuanTests/          几何、颜色、采样、问卷、标定与报告契约测试
+iOS/RuyuanUITests/        报告弹层与查看器等 UI 冒烟测试
 backend/                  可选 Python 后端与测试
-docs/                     计划对照、后端启动、验证及发布清单
-scripts/                  Mac 构建、工程再生成和结构检查
+docs/                     F01–F35 对照、模型核验、后端、验证与发布说明
+scripts/                  云端构建、工程再生成与结构检查
 ```
 
 ## 技术依据
 
-使用 Apple 官方 [Vision 人脸关键点](https://developer.apple.com/documentation/vision/vndetectfacelandmarksrequest)、[AVFoundation 相机会话](https://developer.apple.com/documentation/avfoundation/setting-up-a-capture-session) 和 PhotosUI 的系统照片选择器。服务端 MediaPipe 的来源、模型与授权检查路径列在后端说明中。没有接入商业测肤 API，没有复制参考产品的私有代码或真人样本到交付包。
+使用 Apple 官方 [Vision 人脸关键点](https://developer.apple.com/documentation/vision/vndetectfacelandmarksrequest)、[AVFoundation 相机会话](https://developer.apple.com/documentation/avfoundation/setting-up-a-capture-session) 和 PhotosUI。当前未接入商业测肤 API，也未复制参考产品的私有代码、真人照片或视频到交付包。

@@ -5,11 +5,15 @@ final class SelfAssessmentCalibrationTests:XCTestCase {
     func testQuestionnaireIsSeparatedAndDoesNotOverwriteServerScores() {
         var report=SampleData.report
         report.origin = .server
+        report.skin[0].items.append(SkinItem(id:"hydration",title:"仪器水分",valueText:"真实服务端值",note:"服务端原始证据",overlayID:nil))
+        report.skin[2].items.append(SkinItem(id:"barrier",title:"服务端评估",valueText:"服务端结果",note:"原始证据",overlayID:nil))
         let old=report.skin.map(\.score)
         let answer=SkinSelfAssessment(dryness:1,oiliness:2,reactivity:0,age:30)
         let next=answer.applying(to:report)
         XCTAssertEqual(next.skin.map(\.score),old)
         XCTAssertEqual(next.assessment?.age,30)
+        XCTAssertEqual(next.skin[0].items.first{$0.id == "hydration"}?.valueText,"真实服务端值")
+        XCTAssertEqual(next.skin[2].items.first{$0.id == "barrier"}?.valueText,"服务端结果")
         XCTAssertTrue(next.skin.flatMap(\.items).contains{$0.id == "self-dryness"})
     }
     func testMissingScoresCanUseClearlyMarkedSelfReport() {

@@ -511,9 +511,37 @@ private struct ReportDetailSheet: View {
                         Text(layer.title).font(.caption2).foregroundStyle(RuyuanStyle.muted)
                     }
                 }
-                Text(item.note).font(.caption).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
+                Text(explanation(for: item)).font(.caption).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                if !report.isSample && report.modelVersion.contains(AppearanceAnalyzer.version) {
+                    DisclosureGroup("计算依据与来源") {
+                        Text(item.note).font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4).padding(.top,6).textSelection(.enabled)
+                    }.font(.caption2).tint(RuyuanStyle.purple)
+                }
             }
+        }
+    }
+
+    private func explanation(for item:SkinItem)->String {
+        guard !report.isSample,report.modelVersion.contains(AppearanceAnalyzer.version) else{return item.note}
+        switch item.id {
+        case "highlight":return "黄色标记展示本次照片的高亮反光分布。可以点开原图对照额头、鼻部和两颊，再结合自己当天的出油感记录。"
+        case "self-dryness":return "这是你填写的洗脸后紧绷或干燥频率。日常护理以舒适为准，有明显紧绷时先减少过度清洁，做好温和保湿。"
+        case "self-oiliness":return "这是你填写的日常出油感。将同光线下的反光分布与自己的感受一起记录，比单看照片更有参考意义。"
+        case "self-reactivity":return "这是你自述的日常刺激反应频率。近期先精简护肤、减少多种刺激性产品叠加；持续或反复不适请咨询专业人员。"
+        case "lab","ita":return "记录这次照片的色彩基线。后续尽量使用同一相机、相同光线与角度复拍，查看色彩变化趋势。"
+        case "pigment-candidates":return "标记展示相对周围颜色较暗的片区。点击缩略图可以查看具体分布；阴影、毛发和妆容也可能形成候选。"
+        case "redness":return "红色标记展示相对面颊基线偏红的片区，方便与原图逐处对照。请结合当天温度、运动与实际肤感一起观察。"
+        case "pore-candidates":return "蓝色标记展示面颊的细小暗点候选。使用清晰、无美颜的近距照片，便于查看局部纹理；分辨率不足时会提示重拍。"
+        case "nose-dark-candidates":return "标记展示鼻梁及上鼻部的细小暗点候选。点开图层查看位置，日常避免反复挤压或用力磨砂。"
+        case "texture":return "这项记录局部亮度纹理的离散程度。结合原图和同条件复拍对照，避免将拍摄锐化、噪声变化当作皮肤改变。"
+        case "under-eye":return "这项比较照片中眼下与面颊的明暗差。保持光线均匀并露出眼周，眼镜或明显阴影遮挡时会暂停比较。"
+        case "hydration":return "本次没有连接水分或皮脂检测仪。下方已单独记录你填写的干燥与出油感。"
+        case "barrier":return "本人日常反应与照片偏红外观分开记录，结合实际感受选择温和、精简的护理。"
+        default:
+            if item.id.hasPrefix("line-") {return "标记展示该部位在这张照片里的线状纹理。放大后可与原图切换查看；表情、角度和光照变化会影响纹理显现。"}
+            if item.id.hasSuffix("-formula") {return "参考分来自这张照片的实际像素统计。详细公式与来源可在下方展开查看，适合在一致拍摄条件下留存对照。"}
+            return item.note
         }
     }
 

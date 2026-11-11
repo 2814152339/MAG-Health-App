@@ -454,38 +454,6 @@ struct LocalAnalyzer {
         return paths
     }
 
-    private static func skinMetrics(_ appearance: Appearance) -> [SkinMetric] {
-        let scope = "双侧面颊椭圆内 \(appearance.sampleCount) 个网格样本；非全脸、非皮肤分割。"
-        return [
-            SkinMetric(dimension: .waterOil, score: nil, status: "仅照片外观 · 无水油评分", items: [
-                SkinItem(id: "highlight", title: "高亮样本占比", valueText: percent(appearance.highlightFraction),
-                         note: scope + "可由光照、护肤品或妆容造成，不是皮脂量。", overlayID: "rgb-highlights"),
-                SkinItem(id: "hydration", title: "含水量 / 皮脂量", valueText: "未测量",
-                         note: "单张 RGB 照片无法替代水分与皮脂检测仪。", overlayID: nil)
-            ]),
-            SkinMetric(dimension: .tone, score: nil, status: "RGB 外观基线 · 无肤色评分", items: [
-                SkinItem(id: "brightness", title: "区域 RGB 亮度", valueText: percent(appearance.meanBrightness),
-                         note: scope + "加权 sRGB 编码值占 0–1 的比例，不是亮白分或肤色分型。", overlayID: "cheek-sampling"),
-                SkinItem(id: "variation", title: "区域亮度标准差", valueText: String(format: "%.1f 个百分点", appearance.brightnessDeviation * 100),
-                         note: "反映照片局部亮度离散，受阴影与妆容影响，不能据此诊断色斑。", overlayID: "cheek-sampling")
-            ]),
-            SkinMetric(dimension: .sensitivity, score: nil, status: "仅相对偏红 · 无敏感评分", items: [
-                SkinItem(id: "redness", title: "相对偏红样本占比", valueText: percent(appearance.rednessFraction),
-                         note: scope + "相对本张照片面颊中位 RGB 基线；不代表敏感、炎症或红血丝。", overlayID: "rgb-redness"),
-                SkinItem(id: "barrier", title: "敏感性 / 屏障状态", valueText: "未评估",
-                         note: "需要病史、专业检查及必要的仪器检测，不能从颜色推断。", overlayID: nil)
-            ]),
-            SkinMetric(dimension: .smoothness, score: nil, status: "当前不支持可靠测量", items: [
-                SkinItem(id: "pores", title: "毛孔 / 痘痘 / 光滑度", valueText: "未评估",
-                         note: "未部署并验证对应检测模型；不将锐度、图像噪声或亮度当作毛孔与皮肤光滑度。", overlayID: nil)
-            ]),
-            SkinMetric(dimension: .aging, score: nil, status: "当前不支持可靠测量", items: [
-                SkinItem(id: "wrinkles", title: "皱纹 / 松弛 / 衰老程度", valueText: "未评估",
-                         note: "未部署并验证皱纹或组织松弛模型，不推断年龄或生成衰老分数。", overlayID: nil)
-            ])
-        ]
-    }
-
     private static func clamp(_ value: Double) -> Double { min(1, max(0, value)) }
     private static func percent(_ value: Double) -> String { String(format: "%.1f%%", value * 100) }
     private static func angleText(_ radians: Double?) -> String {
