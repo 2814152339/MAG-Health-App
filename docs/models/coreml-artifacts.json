@@ -178,12 +178,12 @@
       "releaseTag": "coreml-models-20261112-v1",
       "source": {
         "type": "githubRelease",
-        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "repository": "2814152339/MAG-Health-App",
         "tag": "coreml-models-20261112-v1",
         "releaseID": 442401296,
         "assetID": 737665562,
         "assetName": "Ruyuan-CoreML-acne.zip",
-        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737665562"
+        "apiURL": "https://api.github.com/repos/2814152339/MAG-Health-App/releases/assets/737665562"
       }
     },
     {
@@ -330,12 +330,12 @@
       "releaseTag": "coreml-models-20261112-v1",
       "source": {
         "type": "githubRelease",
-        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "repository": "2814152339/MAG-Health-App",
         "tag": "coreml-models-20261112-v1",
         "releaseID": 442401296,
         "assetID": 737666107,
         "assetName": "Ruyuan-CoreML-wrinkles.zip",
-        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737666107"
+        "apiURL": "https://api.github.com/repos/2814152339/MAG-Health-App/releases/assets/737666107"
       }
     },
     {
@@ -493,12 +493,12 @@
       "releaseTag": "coreml-models-20261112-v1",
       "source": {
         "type": "githubRelease",
-        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "repository": "2814152339/MAG-Health-App",
         "tag": "coreml-models-20261112-v1",
         "releaseID": 442401296,
         "assetID": 737666476,
         "assetName": "Ruyuan-CoreML-skin_type.zip",
-        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737666476"
+        "apiURL": "https://api.github.com/repos/2814152339/MAG-Health-App/releases/assets/737666476"
       }
     }
   ],
