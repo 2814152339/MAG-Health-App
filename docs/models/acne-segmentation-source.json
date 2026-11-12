@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "id": "rihem_acne_segmentation",
+  "repository": "RihemXX/Acnes",
+  "repositoryType": "space",
+  "revision": "79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83",
+  "license": "Apache-2.0",
+  "licenseEvidence": {
+    "spaceModelCard": "https://huggingface.co/spaces/RihemXX/Acnes/blob/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/README.md",
+    "authorGitHub": "rihem-bs02/Acnes",
+    "authorGitHubRevision": "826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7",
+    "path": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  "architecture": {
+    "library": "segmentation-models-pytorch",
+    "version": "0.5.0",
+    "timmVersion": "1.0.31",
+    "name": "Unet",
+    "encoder_name": "resnet34",
+    "encoder_weights": null,
+    "in_channels": 3,
+    "classes": 1,
+    "parameterCount": 24436369,
+    "safeLoad": "torch.load(weights_only=True); tensor state_dict; strict=True"
+  },
+  "input": {
+    "width": 256,
+    "height": 256,
+    "layout": "RGB",
+    "resize": "OpenCV INTER_LINEAR stretched uint8",
+    "valueRange": [
+      0,
+      1
+    ],
+    "embeddedNormalization": {
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    }
+  },
+  "output": {
+    "name": "acneProbability",
+    "shape": [
+      1,
+      1,
+      256,
+      256
+    ],
+    "dtype": "float32",
+    "activation": "sigmoid",
+    "threshold": 0.2,
+    "thresholdComparison": ">"
+  },
+  "files": [
+    {
+      "path": "Acnes_model.pth",
+      "bytes": 97920000,
+      "sha256": "c58a6af6fb622d916e4aa788d9f620d59df4a42209f655ce4a9db49686c05697",
+      "source": "https://huggingface.co/spaces/RihemXX/Acnes/resolve/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/Acnes_model.pth?download=true",
+      "mirrors": [
+        "https://hf-mirror.com/spaces/RihemXX/Acnes/resolve/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/Acnes_model.pth?download=true&ruyuan=full"
+      ],
+      "role": "tensor_state_dict"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/LICENSE"
+    },
+    {
+      "path": "README-github.md",
+      "bytes": 15032,
+      "sha256": "4ca441ef58240faeee2ce419cd9ec0af722d7c16d647f0fb0af1cab329e7cf58",
+      "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/README.md"
+    },
+    {
+      "path": "final.ipynb",
+      "bytes": 740281,
+      "sha256": "fa92988a7ce0deda2285dfe34b18cad710c7fe6a6fef5fc0fc0134ec83c5b6af",
+      "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/final.ipynb",
+      "role": "preprocessing_reference_only_never_execute"
+    },
+    {
+      "path": "original.jpg",
+      "bytes": 25439,
+      "sha256": "b4cc2a6fe3504c9fb6528459e3f53215d3993a5d3a8252b989ee93b01cf8ba79",
+      "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/original.jpg",
+      "role": "author_public_sample_no_ground_truth"
+    }
+  ],
+  "trainingDataNotice": {
+    "state": "author_full_provenance_not_disclosed",
+    "missing": [
+      "complete training-image source/license manifest",
+      "participant consent/processing scope",
+      "pixel-label protocol and expert adjudication",
+      "subject-disjoint split/prediction logs/evaluation configuration"
+    ],
+    "notClaimed": [
+      "reproduced 91 percent IoU",
+      "clinical acne subtypes",
+      "blackhead classification",
+      "diagnosis",
+      "commercial-data clearance"
+    ]
+  },
+  "integrationState": "verified_pytorch_module_only_not_registered_in_shared_pipeline_not_yet_coreml"
+}

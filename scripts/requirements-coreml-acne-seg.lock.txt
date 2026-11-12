@@ -1,0 +1,15 @@
+# Supplemental Python3.11 macOS arm64 binary dependency lock for actual acne segmentation conversion.
+# Combined with requirements-coreml.lock.txt; Torch2.7.0 and NumPy1.26.4 remain unchanged.
+-r requirements-coreml.lock.txt
+
+segmentation-models-pytorch==0.5.0 \
+    --hash=sha256:c34e09047771aa4dd8878b4f899e8125700cd1f8f7db16e58c37204154151a05
+
+timm==1.0.31 \
+    --hash=sha256:5bd50f7d0fe6d09bf9285ac2523234a1b7e6bf075c0be3e7aed09139fcb617c7
+
+torchvision==0.22.0 \
+    --hash=sha256:191ea28321fc262d8aa1a7fe79c41ff2848864bf382f9f6ea45c41dde8313792
+
+opencv-python-headless==4.11.0.86 \
+    --hash=sha256:48128188ade4a7e517237c8e1e11a9cdf5c282761473383e77beb875bb1e61ca
