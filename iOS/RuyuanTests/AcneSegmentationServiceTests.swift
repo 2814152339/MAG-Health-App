@@ -132,7 +132,8 @@ final class AcneSegmentationServiceTests: XCTestCase {
         let low = try AcneSegmentationService.analyze(image: image(width: 510, height: 512),
             faceBox: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5), landmarks: landmarks, segmentation: mask())
         XCTAssertEqual(low.state, .lowResolution)
-        XCTAssertEqual(low.nativeCropWidth, 255); XCTAssertEqual(low.nativeCropHeight, 256)
+        // Inward-only crop: floor(0.75 * 510) - ceil(0.25 * 510) = 382 - 128 = 254.
+        XCTAssertEqual(low.nativeCropWidth, 254); XCTAssertEqual(low.nativeCropHeight, 256)
         XCTAssertNil(low.statistics); XCTAssertNil(low.overlay)
         let noMask = try AcneSegmentationService.analyze(image: image(), faceBox: CGRect(x: 0, y: 0, width: 1, height: 1),
             landmarks: landmarks, segmentation: nil)
@@ -250,6 +251,10 @@ final class AcneSegmentationServiceTests: XCTestCase {
     }
 
     func testCombinedSemanticGeometry478PoreAndAcneFitsNearFullReportBudget() throws {
+        // Explicit synthetic chin is required by the production hairline-calibration contract.
+        // The fixture keeps hairline .20 < brow .36 < nose base .65 < chin .90.
+        var landmarks = self.landmarks
+        landmarks["faceContour"] = [.init(x: 0.12, y: 0.4), .init(x: 0.5, y: 0.9), .init(x: 0.88, y: 0.4)]
         let width = 640, height = 640, box = CGRect(x: 0.12, y: 0.08, width: 0.76, height: 0.84)
         let semantic = try mask(width: width, height: height, category: { x, y in
             y < 128 ? .hair : (x % 9 == 0 ? .accessories : .faceSkin)

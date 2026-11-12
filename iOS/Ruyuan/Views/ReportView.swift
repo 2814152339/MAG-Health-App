@@ -409,6 +409,7 @@ private struct ReportDetailSheet: View {
                     .id("reportDimensionSection")
                 }.padding(.horizontal, 14).padding(.bottom, 28)
               }
+              .accessibilityIdentifier("reportDetailScrollView")
               .onChange(of: selectedDimension) { _, _ in
                   // A tab switch must not retain the previous dimension's long
                   // scroll offset (which used to hide the next title/chart).
@@ -419,7 +420,9 @@ private struct ReportDetailSheet: View {
               }
             }
         }
-        .background(RuyuanStyle.background).accessibilityIdentifier("reportDetailSheet")
+        .background(RuyuanStyle.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reportDetailSheet")
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $inspection) { target in
             OverlayView(report: report, initialLayerID: target.layerID)

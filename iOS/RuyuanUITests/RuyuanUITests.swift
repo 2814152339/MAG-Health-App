@@ -60,6 +60,7 @@ final class RuyuanUITests: XCTestCase {
         detailsButton.tap()
         let detail = identified("reportDetailSheet", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        expandReportDetails(in: app)
         let radar = identified("reportRadarChart", in: app)
         XCTAssertTrue(revealFully(radar, in: app), "The initial report overview must retain its actual five-dimension radar.")
         capture("detail-overview", app: app)
@@ -281,10 +282,28 @@ final class RuyuanUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
+    private func expandReportDetails(in app: XCUIApplication) {
+        let detail = identified("reportDetailSheet", in: app)
+        let scroll = app.scrollViews["reportDetailScrollView"].firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        // Removing the duplicate summary means the radar fits at the medium
+        // detent. Do not rely on incidental content swipes to expand the sheet:
+        // drag the visible native grabber at its measured sheet top instead.
+        // This is a sheet-resize gesture, not a coordinate tap on a control.
+        if scroll.frame.height < app.frame.height * 0.65 {
+            let grabber = detail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+                .withOffset(CGVector(dx: 0, dy: 7))
+            let expandedTop = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+            grabber.press(forDuration: 0.05, thenDragTo: expandedTop)
+        }
+        XCTAssertTrue(waitUntil { scroll.frame.height >= app.frame.height * 0.65 },
+                      "Dragging the actual report sheet grabber must expand its scroll viewport.")
+    }
+
     private func visibleScroll(in app: XCUIApplication) -> XCUIElement {
         // SwiftUI can propagate a container ID to its header children. Select
         // the scroll view itself rather than the first text with the same ID.
-        for identifier in ["reportDetailSheet", "reportOverview"] {
+        for identifier in ["reportDetailScrollView", "reportDetailSheet", "reportOverview"] {
             let scroll = app.scrollViews.matching(identifier: identifier).firstMatch
             if scroll.exists && scroll.isHittable { return scroll }
         }
@@ -346,12 +365,15 @@ final class RuyuanUITests: XCTestCase {
 
     @discardableResult
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, maximumSwipes: Int = 12) -> Bool {
+        let beganInDetails = identified("reportDetailSheet", in: app).exists
         if isReachable(element, in: app) { return true }
         for _ in 0..<maximumSwipes {
+            if beganInDetails && !identified("reportDetailSheet", in: app).exists { return false }
             scrollVertically(in: app, up: true)
             if isReachable(element, in: app) { return true }
         }
         for _ in 0..<maximumSwipes {
+            if beganInDetails && !identified("reportDetailSheet", in: app).exists { return false }
             scrollVertically(in: app, up: false)
             if isReachable(element, in: app) { return true }
         }
