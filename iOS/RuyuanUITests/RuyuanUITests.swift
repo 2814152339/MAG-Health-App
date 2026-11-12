@@ -60,7 +60,21 @@ final class RuyuanUITests: XCTestCase {
         detailsButton.tap()
         let detail = identified("reportDetailSheet", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let summary = identified("detailReportSummary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "The initial detail sheet must retain its report's actual conclusion card.")
+        let summaryHeading = summary.staticTexts["总体结论"].firstMatch
+        XCTAssertTrue(isReachable(summaryHeading, in: app), "The conclusion must be visible on first opening, not merely exist offscreen.")
+        let initialTop = detail.frame.minY
+        let initialTopFraction = (initialTop - app.frame.minY) / app.frame.height
+        XCTAssertTrue((0.12...0.30).contains(initialTopFraction), "The initial sheet should cover about 80% of the screen, not open at the medium or full detent.")
+        let originalSummaryLabels = Set(summary.staticTexts.allElementsBoundByIndex.map(\.label))
+        XCTAssertTrue(originalSummaryLabels.contains("总体结论"))
+        capture("detail-initial-summary", app: app)
         expandReportDetails(in: app)
+        XCTAssertLessThan(detail.frame.minY, initialTop, "The real grabber gesture must expand the initial sheet.")
+        XCTAssertEqual(Set(summary.staticTexts.allElementsBoundByIndex.map(\.label)), originalSummaryLabels,
+                       "Changing detents must not lose or replace the report's actual summary.")
+        capture("detail-expanded-summary", app: app)
         let radar = identified("reportRadarChart", in: app)
         XCTAssertTrue(revealFully(radar, in: app), "The initial report overview must retain its actual five-dimension radar.")
         capture("detail-overview", app: app)
@@ -286,17 +300,16 @@ final class RuyuanUITests: XCTestCase {
         let detail = identified("reportDetailSheet", in: app)
         let scroll = app.scrollViews["reportDetailScrollView"].firstMatch
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
-        // Removing the duplicate summary means the radar fits at the medium
-        // detent. Do not rely on incidental content swipes to expand the sheet:
-        // drag the visible native grabber at its measured sheet top instead.
+        // Do not rely on incidental content swipes to expand the initial
+        // report detent: drag its visible native grabber at the measured top.
         // This is a sheet-resize gesture, not a coordinate tap on a control.
-        if scroll.frame.height < app.frame.height * 0.65 {
+        if scroll.frame.height < app.frame.height * 0.75 {
             let grabber = detail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
                 .withOffset(CGVector(dx: 0, dy: 7))
             let expandedTop = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
             grabber.press(forDuration: 0.05, thenDragTo: expandedTop)
         }
-        XCTAssertTrue(waitUntil { scroll.frame.height >= app.frame.height * 0.65 },
+        XCTAssertTrue(waitUntil { scroll.frame.height >= app.frame.height * 0.75 },
                       "Dragging the actual report sheet grabber must expand its scroll viewport.")
     }
 

@@ -24,6 +24,7 @@ struct ReportView: View {
     let report: AnalysisReport
     @State private var selectedDimension: SkinDimension = .waterOil
     @State private var sheet: ReportSheet?
+    @State private var detailDetent: PresentationDetent = .fraction(0.8)
     @State private var inspection: InspectionTarget?
     @State private var exportError: String?
     @State private var feedbackChoice = ""
@@ -65,7 +66,7 @@ struct ReportView: View {
             switch destination {
             case .details:
                 ReportDetailSheet(report: report, initialDimension: selectedDimension)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.medium, .fraction(0.8), .large], selection: $detailDetent)
                     .presentationDragIndicator(.visible).presentationCornerRadius(28)
             case .feedback:
                 ReportFeedbackEditor(initialNote: feedbackNote) { note in
@@ -257,7 +258,11 @@ struct ReportView: View {
         }.padding(14).background(.white.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func openDetails(_ dimension: SkinDimension) { selectedDimension = dimension; sheet = .details }
+    private func openDetails(_ dimension: SkinDimension) {
+        selectedDimension = dimension
+        detailDetent = .fraction(0.8)
+        sheet = .details
+    }
     private var feedbackKey: String { "report.feedback.v1.\(report.id)" }
     private func loadFeedback() {
         let value = UserDefaults.standard.dictionary(forKey: feedbackKey)
@@ -383,6 +388,11 @@ private struct ReportDetailSheet: View {
               ScrollViewReader { reader in
               ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
+                    // The reference opens with its conclusion card, then the
+                    // radar. Scrolling it away is not the same as omitting it.
+                    ReportSummaryCard(report: report)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("detailReportSummary")
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             Image(systemName: "atom").foregroundStyle(RuyuanStyle.purple)
