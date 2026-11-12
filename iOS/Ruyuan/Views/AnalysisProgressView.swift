@@ -37,14 +37,27 @@ private struct ScanMeasurement: Identifiable {
     let id: String
     let anchor: NormalizedPoint
     let text: String
+    var numericValue: Double? = nil
+    var unit: String = ""
+    var title: String = ""
+
+    func displayedText(progress: Double) -> String {
+        guard let value = ScanMotionTimeline.animatedValue(numericValue, progress: progress) else { return text }
+        if progress >= 1 { return text }
+        return (title.isEmpty ? "" : title + "\n") + String(format: "%.2f", value) + unit
+    }
 }
 
 @MainActor
 struct AnalysisProgressView: View {
     @EnvironmentObject private var store: AppStore
     @State private var sceneIndex = 0
-    @State private var sceneElapsed: Double = 0
+    @State private var clock = ScanPlaybackClock(now: Date())
+    @State private var cameraFromRegion = CGRect(x: 0, y: 0, width: 1, height: 1)
+    @State private var cameraFromFocus: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var paused = false
+    @State private var manuallyInspectedScene = false
     @State private var skipRequested = false
     @State private var showCancel = false
     @State private var showsSemanticMask = false
@@ -56,18 +69,25 @@ struct AnalysisProgressView: View {
             header
             if let report = store.scanReport {
                 GeometryReader { proxy in
-                    if scene == .brow || scene == .eyeArea {
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused || showsMaskViewer)) { context in
+                        let elapsed = clock.elapsed(at: context.date)
+                        let phases = motionPhases(elapsed: elapsed)
+                        let focus = cameraRegion(report, elapsed: elapsed)
+                        let focusAmount = cameraFocus(elapsed: elapsed)
+                        let photoHeight = proxy.size.height * (0.77 + 0.23 * focusAmount)
+                        let exit = reduceMotion ? 1 : 1 - ScanMotionTimeline.smoothstep((elapsed - scene.duration + 0.32) / 0.25)
                         ZStack(alignment: .bottom) {
-                            scanPhoto(report)
-                            resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
-                        }.frame(width: proxy.size.width, height: proxy.size.height)
-                    } else {
-                        // Full-face measurements stay above the tech panel,
-                        // rather than hiding the chin / lower-face labels.
-                        VStack(spacing: 8) {
-                            scanPhoto(report)
-                            resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
-                        }.frame(width: proxy.size.width, height: proxy.size.height)
+                            scanPhoto(report, focus: focus, elapsed: elapsed, phases: phases, exit: exit)
+                                .frame(height: photoHeight)
+                                .frame(maxHeight: .infinity, alignment: .top)
+                            resultPanel(report)
+                                .overlay { ScanTechBezel(progress: phases.panel) }
+                                .padding(.horizontal, 22).padding(.bottom, 13)
+                                .offset(x: proxy.size.width * CGFloat((1 - phases.panel) + (1 - exit)))
+                                .opacity(phases.panel * exit)
+                                .allowsHitTesting(false)
+                        }
+                        .overlay(alignment: .top) { scanTopBar }
                     }
                 }
                 playback
@@ -82,14 +102,14 @@ struct AnalysisProgressView: View {
         .task(id: store.scanReport?.id) {
             guard store.scanReport != nil else { return }
             if skipRequested { store.finishScanPresentation(); return }
+            clock.reset(at: Date())
             while store.scanReport != nil {
                 do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
                 if skipRequested { store.finishScanPresentation(); return }
                 if paused || showsMaskViewer { continue }
-                sceneElapsed += 0.25
-                if sceneElapsed >= scene.duration {
+                if clock.elapsed(at: Date()) >= scene.duration {
                     if sceneIndex == ScanScene.allCases.count - 1 { store.finishScanPresentation(); return }
-                    withAnimation(.easeInOut(duration: 0.5)) { sceneIndex += 1; sceneElapsed = 0 }
+                    changeScene(to: sceneIndex + 1)
                 }
             }
         }
@@ -99,6 +119,10 @@ struct AnalysisProgressView: View {
                 if store.scanReport != nil { store.finishScanPresentation() } else { store.cancelAnalysis() }
             }
         } message: { Text("尚未完成的本次任务会被取消。") }
+        .onChange(of: showsMaskViewer) { _, visible in
+            if visible { clock.pause(at: Date()) }
+            else if !paused { clock.resume(at: Date()) }
+        }
         .fullScreenCover(isPresented: $showsMaskViewer) {
             if let report = store.scanReport {
                 OverlayView(report: report, initialLayerID: "semantic-face-skin")
@@ -107,12 +131,12 @@ struct AnalysisProgressView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button {
                 if store.scanReport != nil { store.finishScanPresentation() } else { showCancel = true }
-            } label: { Image(systemName: "chevron.left").font(.body).frame(width: 36, height: 42) }
+            } label: { Image(systemName: "chevron.left").font(.system(size: 20)).frame(width: 36, height: 44) }
                 .accessibilityLabel("返回报告")
-            Text("测肤质").font(.subheadline.weight(.medium))
+            Text("测肤质").font(.system(size: 19, weight: .medium))
             if store.scanReport?.isSample == true {
                 Text("演示扫描").font(.system(size: 9, weight: .semibold))
                     .padding(.horizontal, 7).padding(.vertical, 4)
@@ -120,10 +144,84 @@ struct AnalysisProgressView: View {
                     .accessibilityIdentifier("sampleScanNotice")
             }
             Spacer()
+            Menu {
+                if store.scanReport?.overlays.contains(where: { $0.id == "semantic-face-skin" && !$0.paths.isEmpty }) == true {
+                    Button(showsSemanticMask ? "隐藏模型皮肤掩膜" : "显示模型皮肤掩膜") { showsSemanticMask.toggle() }
+                        .accessibilityIdentifier("scanSemanticMaskToggle")
+                    Button("放大核对掩膜") { clock.pause(at: Date()); showsMaskViewer = true }
+                        .accessibilityIdentifier("scanSemanticMaskViewer")
+                }
+                Text("动画展示本次报告的已有点位与数值，不参与计算。")
+            } label: { Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold)).frame(width: 44, height: 44) }
+        }.foregroundStyle(RuyuanStyle.ink).padding(.horizontal, 6).background(.white)
+    }
+
+    private var scanTopBar: some View {
+        HStack {
+            Spacer()
             Button("跳过") {
                 if store.scanReport != nil { store.finishScanPresentation() } else { skipRequested = true }
-            }.font(.caption).padding(.horizontal, 14).accessibilityIdentifier("skipScanButton")
-        }.foregroundStyle(RuyuanStyle.ink).padding(.horizontal, 6).background(.white)
+            }
+            .font(.system(size: 14)).padding(.horizontal, 19).frame(height: 35)
+            .accessibilityIdentifier("skipScanButton")
+        }.foregroundStyle(.white).background(.black.opacity(0.12))
+    }
+
+    private func motionPhases(elapsed: Double) -> ScanMotionTimeline.Phases {
+        if reduceMotion { return .complete }
+        if scene == .face {
+            func phase(_ start: Double, _ end: Double) -> Double {
+                ScanMotionTimeline.smoothstep((elapsed - start) / (end - start))
+            }
+            return .init(points: phase(0, 0.6), referenceLines: phase(2.0, 2.7),
+                         measurements: phase(2.7, 3.9), labels: phase(3.1, 4.0), panel: phase(4.1, 4.4))
+        }
+        let cameraLead = (scene == .brow || scene == .eyeArea) ? 0.85 : 0.25
+        let revealDuration = max(2.3, scene.duration - cameraLead - 1.3)
+        return ScanMotionTimeline.phases(elapsed: max(0, elapsed - cameraLead) * 2.3 / revealDuration)
+    }
+
+    private func angleProgress(elapsed: Double, phases: ScanMotionTimeline.Phases) -> Double {
+        if reduceMotion { return 1 }
+        if scene == .face { return ScanMotionTimeline.smoothstep((elapsed - 0.55) / 1.05) }
+        return phases.measurements
+    }
+
+    private func cameraProgress(elapsed: Double) -> Double {
+        reduceMotion ? 1 : ScanMotionTimeline.smoothstep(elapsed / 0.85)
+    }
+
+    private func cameraRegion(_ report: AnalysisReport, elapsed: Double) -> CGRect {
+        let target = region(report) ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let t = CGFloat(cameraProgress(elapsed: elapsed))
+        return CGRect(x: cameraFromRegion.minX + (target.minX - cameraFromRegion.minX) * t,
+                      y: cameraFromRegion.minY + (target.minY - cameraFromRegion.minY) * t,
+                      width: cameraFromRegion.width + (target.width - cameraFromRegion.width) * t,
+                      height: cameraFromRegion.height + (target.height - cameraFromRegion.height) * t)
+    }
+
+    private func cameraFocus(elapsed: Double) -> Double {
+        let target = (scene == .brow || scene == .eyeArea) ? 1.0 : 0.0
+        return cameraFromFocus + (target - cameraFromFocus) * cameraProgress(elapsed: elapsed)
+    }
+
+    private func changeScene(to index: Int) {
+        guard ScanScene.allCases.indices.contains(index), index != sceneIndex else { return }
+        let now = Date()
+        if let report = store.scanReport {
+            cameraFromRegion = cameraRegion(report, elapsed: clock.elapsed(at: now))
+            cameraFromFocus = cameraFocus(elapsed: clock.elapsed(at: now))
+        }
+        // Keep one photo node throughout: no implicit old/new-face crossfade.
+        sceneIndex = index
+        clock.reset(at: now)
+        manuallyInspectedScene = paused
+        if paused {
+            // Explicit stepping while paused is a static inspection of the
+            // next result, not an animation silently running behind Pause.
+            clock.reset(at: now.addingTimeInterval(-max(4.5, scene.duration - 0.5)))
+            clock.pause(at: now)
+        }
     }
 
     private var waitingPhoto: some View {
@@ -138,6 +236,7 @@ struct AnalysisProgressView: View {
                     Text("正在处理这张照片").font(.caption).padding(12)
                         .background(.black.opacity(0.45), in: Capsule()).padding(18)
                 }.foregroundStyle(.white)
+                scanTopBar.frame(maxHeight: .infinity, alignment: .top)
                 TimelineView(.animation) { time in
                     let fraction = time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3
                     Rectangle().fill(LinearGradient(colors: [.clear, Color(hex: "7775FF").opacity(0.75), .clear],
@@ -174,6 +273,14 @@ struct AnalysisProgressView: View {
             if layer.id.hasPrefix("semantic-") {
                 return showsSemanticMask && layer.id == "semantic-face-skin"
             }
+            if scene == .outline { return false }
+            if scene == .face && layer.id.contains("jaw-left") { return false }
+            if scene == .thirds && (layer.id.hasPrefix("geometry-model-hairline") || layer.id.hasPrefix("geometry-user-calibration")) {
+                // The same source guides are animated below as white dotted
+                // references plus three vertical dimensions, not duplicated
+                // as full-face blue horizontal arrow bars.
+                return false
+            }
             return scene.tokens.contains { layer.id.localizedCaseInsensitiveContains($0) }
         }.map { layer in
             guard layer.id.hasPrefix("geometry-") else { return layer }
@@ -189,60 +296,73 @@ struct AnalysisProgressView: View {
         let browID = eye.id == "leftEye" ? "leftEyebrow" : "rightEyebrow"
         let points = eye.points + (report.landmarks.first { $0.id == browID }?.points ?? [])
         return ReportPhotoTransform.region(points: points, padding: CGSize(width: 0.13, height: 0.19),
-                                           minimum: CGSize(width: 0.40, height: 0.48))
+                                           minimum: CGSize(width: 0.56, height: 0.66))
     }
 
-    private func scanPhoto(_ report: AnalysisReport) -> some View {
-        let focus = region(report)
-        let paths = report.landmarks.filter { scene.landmarkNames.contains($0.id) }
+    private func scanPhoto(_ report: AnalysisReport, focus: CGRect, elapsed: Double,
+                           phases: ScanMotionTimeline.Phases, exit: Double) -> some View {
+        let paths = sceneLandmarks(report)
         return GeometryReader { proxy in
             let transform = ReportPhotoTransform(
                 imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
-                viewport: proxy.size, region: focus ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+                viewport: proxy.size, region: focus)
             ZStack(alignment: .topLeading) {
-                FocusedReportPhotoView(report: report, image: store.analysisImage, layers: displayLayers(report),
-                                       landmarks: paths, region: focus)
+                FocusedReportPhotoView(report: report, image: store.analysisImage, region: focus)
                     .allowsHitTesting(false)
-                measurementGuides(report, transform: transform)
-                ForEach(measurements(report)) { item in
-                    Text(item.text).font(.system(size: 9, weight: .medium)).multilineTextAlignment(.center)
-                        .foregroundStyle(.white).shadow(color: .black.opacity(0.9), radius: 2)
-                        .padding(3).background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 3))
-                        .position(transform.position(item.anchor))
-                        .allowsHitTesting(false)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 5) {
-                        Circle().fill(Color(hex: "8A82FF")).frame(width: 5, height: 5)
-                        Text("\(scene.title) · \(report.isSample ? "合成示例回放" : "已计算结果回放")").font(.system(size: 10))
-                            .accessibilityIdentifier("scanSceneTitle")
-                        Spacer()
-                        Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 9).monospacedDigit())
+                ZStack(alignment: .topLeading) {
+                    ScanGeometryDrawing(layers: displayLayers(report), landmarks: paths, transform: transform,
+                                        phases: phases, elapsed: elapsed, reduceMotion: reduceMotion,
+                                        angleProgress: angleProgress(elapsed: elapsed, phases: phases))
+                    measurementGuides(report, transform: transform, progress: phases.referenceLines,
+                                      measurementProgress: phases.measurements)
+                    ForEach(measurements(report)) { item in
+                        let progress = item.unit == "°" ? angleProgress(elapsed: elapsed, phases: phases) : phases.measurements
+                        let labelOpacity = scene == .face && item.unit == "°" ? progress : phases.labels
+                        Text(item.displayedText(progress: progress))
+                            .font(.system(size: 12, weight: .medium)).multilineTextAlignment(.center)
+                            .foregroundStyle(.white).shadow(color: .black.opacity(0.75), radius: 2)
+                            .position(transform.position(item.anchor))
+                            .opacity(labelOpacity)
+                            .offset(y: CGFloat(1 - labelOpacity) * 5)
+                            .allowsHitTesting(false)
                     }
-                    if report.overlays.contains(where: { $0.id == "semantic-face-skin" && !$0.paths.isEmpty }) {
-                        HStack(spacing: 14) {
-                            Button { showsSemanticMask.toggle() } label: {
-                                Label("模型皮肤掩膜", systemImage: showsSemanticMask ? "checkmark.circle.fill" : "circle")
-                            }.accessibilityIdentifier("scanSemanticMaskToggle")
-                                .accessibilityValue(showsSemanticMask ? "显示" : "隐藏")
-                            Button("放大核对") { showsMaskViewer = true }
-                                .accessibilityIdentifier("scanSemanticMaskViewer")
-                            Spacer()
-                        }.font(.system(size: 10)).buttonStyle(.plain)
-                    }
-                }.foregroundStyle(.white).padding(10).background(.black.opacity(0.20))
-            }.animation(.easeInOut(duration: 0.5), value: sceneIndex)
+                }.opacity(exit)
+            }
         }
-        // A focused image is intentionally larger than its visible viewport.
-        // Clipping pixels alone does not clip SwiftUI's hit-test region; its
-        // offscreen image must not swallow the header's Skip / Back controls.
         .contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
         .accessibilityLabel(report.isSample ? "合成示意与示例测量标注" : "本次照片与实际测量标注")
-        .accessibilityValue(focus == nil ? "完整照片" : "已按本报告眉眼点位定位局部")
+        .accessibilityValue((region(report) == nil ? "完整照片" : "已按本报告眉眼点位定位局部")
+            + (phases.panel >= 1 ? " · 标注展开完成" : " · 动画展开中"))
         .accessibilityIdentifier("scanOriginalPhoto")
     }
 
-    private func measurementGuides(_ report: AnalysisReport, transform: ReportPhotoTransform) -> some View {
+    private func sceneLandmarks(_ report: AnalysisReport) -> [LandmarkPath] {
+        let names: [String]
+        switch scene {
+        case .outline: names = []
+        case .face: names = []
+        case .thirds: names = []
+        case .eyes: names = ["leftEye", "rightEye"]
+        case .triangle: names = []
+        case .brow: names = ["leftEyebrow", "rightEyebrow", "leftEye", "rightEye"]
+        case .nose: names = ["nose", "outerLips", "innerLips"]
+        default: names = []
+        }
+        if scene == .outline {
+            // A small set of real feature centers, not 478 points all at once.
+            return report.landmarks.filter { ["leftEye", "rightEye", "nose", "outerLips"].contains($0.id) }
+                .compactMap { item in
+                    guard !item.points.isEmpty else { return nil }
+                    let n = Double(item.points.count)
+                    return LandmarkPath(id: item.id, points: [.init(x: item.points.map(\.x).reduce(0, +) / n,
+                        y: item.points.map(\.y).reduce(0, +) / n)], closed: false)
+                }
+        }
+        return report.landmarks.filter { names.contains($0.id) }
+    }
+
+    private func measurementGuides(_ report: AnalysisReport, transform: ReportPhotoTransform, progress: Double,
+                                   measurementProgress: Double) -> some View {
         Canvas { context, _ in
             guard [.face, .thirds, .eyes].contains(scene),
                   let contour = report.landmarks.first(where: { $0.id == "faceContour" }),
@@ -250,12 +370,17 @@ struct AnalysisProgressView: View {
                   let top = contour.points.map(\.y).min(), let bottom = contour.points.map(\.y).max() else { return }
             func line(_ a: NormalizedPoint, _ b: NormalizedPoint, arrows: Bool = false) {
                 let start = transform.position(a), end = transform.position(b)
-                var path = Path(); path.move(to: start); path.addLine(to: end)
+                let amount = arrows ? measurementProgress : progress
+                let points: [CGPoint]
+                if arrows, let segment = ScanMotionTimeline.centerOutLine(from: start, to: end, progress: amount) {
+                    points = [segment.start, segment.end]
+                } else { points = ScanMotionTimeline.polylinePrefix([start, end], progress: amount) }
+                var path = Path(); if let first = points.first { path.move(to: first) }; for p in points.dropFirst() { path.addLine(to: p) }
                 context.stroke(path, with: .color(arrows ? Color(hex: "8C86FF") : .white.opacity(0.8)),
                                style: StrokeStyle(lineWidth: arrows ? 1.1 : 0.7, dash: arrows ? [] : [2, 3]))
-                if arrows {
-                    let angle = atan2(end.y - start.y, end.x - start.x)
-                    for (point, direction) in [(start, angle), (end, angle + .pi)] {
+                if arrows, amount > 0, let movingStart = points.first, let movingEnd = points.last {
+                    let angle = atan2(movingEnd.y - movingStart.y, movingEnd.x - movingStart.x)
+                    for (point, direction) in [(movingStart, angle), (movingEnd, angle + .pi)] {
                         var head = Path()
                         head.move(to: CGPoint(x: point.x + cos(direction - 0.5) * 6, y: point.y + sin(direction - 0.5) * 6))
                         head.addLine(to: point)
@@ -278,6 +403,17 @@ struct AnalysisProgressView: View {
                 let modelTop = modelBoundary.flatMap { $0.isEmpty ? nil : $0[$0.count / 2] }
                 let guides = [report.calibration?.hairlineY ?? modelTop, brow, nose, bottom].compactMap { $0 }
                 for y in guides { line(.init(x: left, y: y), .init(x: right, y: y)) }
+                if let first = guides.first, let last = guides.last {
+                    line(.init(x: (left + right) / 2, y: first), .init(x: (left + right) / 2, y: last))
+                }
+                // Three intervals are drawn only when all four real guides
+                // exist. A missing visible hair boundary is not invented.
+                if guides.count == 4 {
+                    for index in 0..<3 {
+                        line(.init(x: max(0.02, left - 0.035), y: guides[index]),
+                             .init(x: max(0.02, left - 0.035), y: guides[index + 1]), arrows: true)
+                    }
+                }
             } else {
                 let eyes = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
                 let positions = ([left, right] + eyes.flatMap { eye in [eye.points.map(\.x).min(), eye.points.map(\.x).max()].compactMap { $0 } }).sorted()
@@ -303,7 +439,8 @@ struct AnalysisProgressView: View {
         func add(_ id: String, _ title: String, _ names: [String], dy: Double = 0) {
             guard let metric = report.geometry.first(where: { $0.id == id && $0.value != nil }), var point = center(names) else { return }
             point.y = min(0.96, max(0.04, point.y + dy))
-            values.append(.init(id: id, anchor: point, text: title + "\n" + metric.formattedValue))
+            values.append(.init(id: id, anchor: point, text: title + "\n" + metric.formattedValue,
+                                numericValue: metric.value, unit: metric.unit, title: title))
         }
         func addDistance(_ depthID: String, calibratedID: String? = nil, names: [String], dy: Double = 0) {
             let depth = report.geometry.first { $0.id == depthID && $0.value != nil && $0.unit == "mm" }
@@ -313,7 +450,12 @@ struct AnalysisProgressView: View {
         }
         switch scene {
         case .face:
-            add("v2-jaw-left-angle", "二维轮廓角", ["faceContour"], dy: 0.17)
+            if let metric = report.geometry.first(where: { $0.id == "v2-jaw-right-angle" && $0.value != nil }),
+               let vertex = report.overlays.first(where: { $0.id == "geometry-jaw-right-points" })?.paths.first,
+               vertex.count == 3 {
+                values.append(.init(id: metric.id, anchor: .init(x: max(0.05, vertex[1].x - 0.075), y: vertex[1].y - 0.025),
+                                    text: metric.formattedValue, numericValue: metric.value, unit: metric.unit, title: ""))
+            }
             add("v2-contour-aspect", "可见轮廓高宽比", ["leftEyebrow", "rightEyebrow"], dy: -0.11)
             addDistance("depth-surface-faceContour", calibratedID: "calibrated-faceContour-mm", names: ["faceContour"], dy: 0.02)
         case .thirds:
@@ -322,16 +464,29 @@ struct AnalysisProgressView: View {
             add(calibrated ? "calibrated-middle-third" : "model-third-middle", calibrated ? "标定中庭占比" : "可见边界中段", ["nose"], dy: -0.05)
             add(calibrated ? "calibrated-lower-third" : "model-third-lower", calibrated ? "标定下庭占比" : "可见边界下段", ["outerLips"], dy: 0.08)
         case .eyes:
-            add("v2-five-left-eye", "眼宽 / 平均眼宽", ["leftEye"], dy: -0.055)
-            add("v2-five-right-eye", "眼宽 / 平均眼宽", ["rightEye"], dy: -0.055)
-            add("v2-five-gap", "眼间距比", ["leftEye", "rightEye"], dy: 0.07)
+            let keys = ["left-margin", "left-eye", "gap", "right-eye", "right-margin"]
+            let titles = ["左留白 / 眼宽", "左眼宽比", "眼间距 / 眼宽", "右眼宽比", "右留白 / 眼宽"]
+            if let points = report.overlays.first(where: { $0.id == "geometry-five-eyes-points" })?.paths.first,
+               points.count == 10 {
+                for index in 0..<5 {
+                    guard let metric = report.geometry.first(where: { $0.id == "v2-five-" + keys[index] && $0.value != nil }) else { continue }
+                    let a = points[index * 2], b = points[index * 2 + 1]
+                    let yOffset = (index == 1 || index == 3) ? 0.09 : -0.065
+                    values.append(.init(id: metric.id,
+                        anchor: .init(x: (a.x + b.x) / 2, y: min(0.95, max(0.05, (a.y + b.y) / 2 + yOffset))),
+                        text: titles[index] + "\n" + metric.formattedValue,
+                        numericValue: metric.value, unit: metric.unit, title: titles[index]))
+                }
+            }
         case .triangle:
             add("v2-triangle-mouth-angle", "三角顶角", ["outerLips"], dy: -0.045)
             add("v2-chin-height-width", "颏区高宽比", ["faceContour"], dy: 0.20)
             addDistance("depth-surface-lip-to-chin", names: ["outerLips", "faceContour"], dy: 0.12)
         case .brow:
-            for (eye, brow, tilt) in [("leftEye", "leftEyebrow", "left-brow-tilt"), ("rightEye", "rightEyebrow", "right-brow-tilt")] {
-                add(tilt, "眉端点倾角", [brow], dy: -0.045)
+            for (eye, brow) in [("leftEye", "leftEyebrow"), ("rightEye", "rightEyebrow")] {
+                // This number belongs to the endpoint–arch–endpoint arc,
+                // not the unrelated eyebrow chord's horizontal tilt.
+                add("v2-\(brow)-arch-angle", "眉弓轮廓夹角", [brow], dy: -0.045)
                 add("v2-\(eye)-inner-angle", "眼内侧轮廓角", [eye], dy: 0.045)
             }
         case .nose:
@@ -368,7 +523,12 @@ struct AnalysisProgressView: View {
             !item.id.hasSuffix("-distribution") && scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) })
         }
         return VStack(alignment: .leading, spacing: 7) {
-            HStack { Text(scene.title).font(.caption.weight(.semibold)); Spacer(); Image(systemName: "scope").font(.caption) }
+            HStack {
+                Text(scene.title).font(.system(size: 15, weight: .semibold))
+                    .accessibilityIdentifier("scanSceneTitle")
+                Spacer(minLength: 8)
+                Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.55))
+            }
             if scene.rawValue <= ScanScene.nose.rawValue {
                 if matchingMetrics.isEmpty {
                     Text(scene == .thirds ? "缺少稳定可见发肤边界及手动标记，不补三段值；可在报告中标定。" : report.isSample ? "当前点位来自手工构造的示例，不是相机检测。" : "显示本次实际识别的面部轮廓与五官点位。")
@@ -376,8 +536,8 @@ struct AnalysisProgressView: View {
                 } else {
                     ForEach(Array(matchingMetrics.prefix(3))) { metric in
                         HStack(alignment: .firstTextBaseline) {
-                            Text(metric.title).font(.system(size: 10)).lineLimit(1); Spacer()
-                            Text(metric.formattedValue).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                            Text(metric.title).font(.system(size: 12)).lineLimit(1); Spacer()
+                            Text(metric.formattedValue).font(.system(size: 13, weight: .medium)).monospacedDigit()
                         }
                     }
                 }
@@ -397,28 +557,34 @@ struct AnalysisProgressView: View {
             }
             Text("照片外观参考 · 毫米值仅来自同拍深度或本人标定")
                 .font(.system(size: 8)).foregroundStyle(.white.opacity(0.60))
-        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.vertical, 16)
+        }.foregroundStyle(.white).padding(.horizontal, 19).padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.black.opacity(0.72), in: ScanPanelShape())
-            .overlay { ScanPanelShape().stroke(Color(hex: "7E78FF"), lineWidth: 1.5) }
-            .overlay { RoundedRectangle(cornerRadius: 5).inset(by: 7).stroke(.white.opacity(0.7), lineWidth: 0.7) }
-            .overlay(alignment: .topLeading) { Capsule().fill(Color(hex: "7775FF")).frame(width: 55, height: 3).offset(x: 24, y: -3) }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("scanMeasurementPanel")
     }
 
     private var playback: some View {
         HStack {
-            Button { if sceneIndex > 0 { sceneIndex -= 1; sceneElapsed = 0 } } label: { Image(systemName: "backward.end").frame(width: 36, height: 38) }
+            Button { if sceneIndex > 0 { changeScene(to: sceneIndex - 1) } } label: { Image(systemName: "backward.end").frame(width: 36, height: 38) }
                 .disabled(sceneIndex == 0).accessibilityLabel("上一分析画面").accessibilityIdentifier("scanPreviousScene")
             Spacer()
-            Button { paused.toggle() } label: { Label(paused ? "继续" : "暂停", systemImage: paused ? "play.fill" : "pause.fill") }
+            Button {
+                paused.toggle()
+                if paused { clock.pause(at: Date()) }
+                else if manuallyInspectedScene {
+                    // Resuming a manually inspected final frame replays that
+                    // scene; a normal mid-animation pause resumes in place.
+                    manuallyInspectedScene = false
+                    clock.reset(at: Date())
+                } else { clock.resume(at: Date()) }
+            } label: { Label(paused ? "继续" : "暂停", systemImage: paused ? "play.fill" : "pause.fill") }
                 .font(.caption2).accessibilityIdentifier("scanPausePlayback")
             Spacer()
-            Button { if sceneIndex < ScanScene.allCases.count - 1 { sceneIndex += 1; sceneElapsed = 0 } } label: { Image(systemName: "forward.end").frame(width: 36, height: 38) }
+            Button { if sceneIndex < ScanScene.allCases.count - 1 { changeScene(to: sceneIndex + 1) } } label: { Image(systemName: "forward.end").frame(width: 36, height: 38) }
                 .accessibilityLabel("下一分析画面").accessibilityIdentifier("scanNextScene")
             Button("查看报告") { store.finishScanPresentation() }.font(.caption.weight(.medium)).accessibilityIdentifier("scanViewReport")
-        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 20)
+        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.top, 2).padding(.bottom, 16)
     }
 }
 

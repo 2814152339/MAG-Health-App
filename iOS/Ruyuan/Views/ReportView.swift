@@ -302,6 +302,23 @@ private func dimensionDescription(_ dimension: SkinDimension) -> String {
 
 private struct ReportSummaryCard: View {
     let report: AnalysisReport
+    let accessibilityScope: String
+    @State private var isConclusionExpanded = false
+    @State private var conclusionHeights: [String: CGFloat] = [:]
+
+    init(report: AnalysisReport, accessibilityScope: String = "overview") {
+        self.report = report
+        self.accessibilityScope = accessibilityScope
+    }
+
+    private var conclusionText: String {
+        report.summary.isEmpty ? "本报告未提供总体文字结论，可查看已提供的分项。" : report.summary
+    }
+    private var conclusionOverflows: Bool {
+        guard let full = conclusionHeights["full"], let preview = conclusionHeights["preview"] else { return false }
+        return full > preview + 0.5
+    }
+
     var body: some View {
         RuyuanCard(padding: 16) {
             VStack(alignment: .leading, spacing: 13) {
@@ -322,10 +339,45 @@ private struct ReportSummaryCard: View {
                 }
                 VStack(alignment: .leading, spacing: 9) {
                     Text("总体结论").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
-                    Text(report.summary.isEmpty ? "本报告未提供总体文字结论，可查看已提供的分项。" : report.summary)
-                        .font(.caption).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
+                    conclusionParagraph
+                        .lineLimit(isConclusionExpanded ? nil : 6)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("\(accessibilityScope)SummaryText")
+                        .contextMenu {
+                            if !report.summary.isEmpty {
+                                Button("复制结论原文", systemImage: "doc.on.doc") {
+                                    // Copy the source, never an ellipsized preview.
+                                    UIPasteboard.general.string = report.summary
+                                }.accessibilityIdentifier("\(accessibilityScope)SummaryCopy")
+                            }
+                        }
+                        .background {
+                            GeometryReader { bounds in
+                                // Measure the same text and width using actual
+                                // SwiftUI typography, including Dynamic Type.
+                                // Neither hidden measurement affects layout/AX.
+                                VStack(spacing: 0) {
+                                    measuredConclusion(width: bounds.size.width, preview: false)
+                                    measuredConclusion(width: bounds.size.width, preview: true)
+                                }
+                                .hidden().accessibilityHidden(true).allowsHitTesting(false)
+                            }
+                        }
+                    if conclusionOverflows || isConclusionExpanded {
+                        Button {
+                            isConclusionExpanded.toggle()
+                        } label: {
+                            Label(isConclusionExpanded ? "收起结论" : "展开完整结论",
+                                  systemImage: isConclusionExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption.weight(.medium)).padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain).foregroundStyle(RuyuanStyle.purple)
+                        .accessibilityIdentifier("\(accessibilityScope)SummaryToggle")
+                        .accessibilityValue(isConclusionExpanded ? "已展开完整原文" : "已收起，显示前6行")
+                        .accessibilityHint("仅切换显示范围，不修改报告原文。")
+                    }
                 }
+                .onPreferenceChange(ConclusionHeightPreference.self) { conclusionHeights = $0 }
                 if report.totalScore == nil {
                     Label("部分维度未评分，不生成综合分、肤龄或同龄排名。", systemImage: "minus.circle")
                         .font(.caption2).foregroundStyle(RuyuanStyle.muted)
@@ -335,6 +387,24 @@ private struct ReportSummaryCard: View {
             }
         }
     }
+
+    private var conclusionParagraph: some View {
+        Text(conclusionText).font(.caption).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
+    }
+
+    private func measuredConclusion(width: CGFloat, preview: Bool) -> some View {
+        conclusionParagraph
+            .lineLimit(preview ? 6 : nil)
+            .frame(width: max(0, width), alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { bounds in
+                    Color.clear.preference(key: ConclusionHeightPreference.self,
+                                           value: [preview ? "preview" : "full": bounds.size.height])
+                }
+            }
+    }
+
     private var referenceRing: some View {
         ZStack {
             Circle().stroke(RuyuanStyle.lilac, lineWidth: 7)
@@ -349,6 +419,13 @@ private struct ReportSummaryCard: View {
             }.foregroundStyle(RuyuanStyle.purple)
         }.frame(width: 54, height: 54).padding(3)
         .accessibilityLabel("综合参考分 \(reportScore(report.totalScore))")
+    }
+}
+
+private struct ConclusionHeightPreference: PreferenceKey {
+    static var defaultValue: [String: CGFloat] { [:] }
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }
 
@@ -390,7 +467,7 @@ private struct ReportDetailSheet: View {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
                     // The reference opens with its conclusion card, then the
                     // radar. Scrolling it away is not the same as omitting it.
-                    ReportSummaryCard(report: report)
+                    ReportSummaryCard(report: report, accessibilityScope: "detail")
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("detailReportSummary")
                     VStack(alignment: .leading, spacing: 4) {

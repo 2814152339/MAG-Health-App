@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import UIKit
 
 /// Uses only the bundled vector illustration and explicitly synthetic sample data.
 /// Never imports a photo, opens the camera, or sends personal data to a server.
@@ -268,6 +269,127 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["演示报告"].waitForExistence(timeout: 8))
         XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 5))
         capture("scanner-report", app: app)
+    }
+
+    func testSyntheticScannerMotionUsesPhotoPixelsAndPauses() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-scan"]
+        app.launch()
+        XCTAssertTrue(identified("analysisScanner", in: app).waitForExistence(timeout: 8))
+        let pause = identified("scanPausePlayback", in: app)
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("继续") })
+        XCTAssertTrue(identified("sampleScanNotice", in: app).exists)
+        let previous = identified("scanPreviousScene", in: app)
+        for _ in 0..<10 where previous.isEnabled { previous.tap() }
+        XCTAssertFalse(previous.isEnabled)
+        identified("scanNextScene", in: app).tap()
+        let title = identified("scanSceneTitle", in: app)
+        XCTAssertTrue(waitUntil { title.label.contains("脸型与下颌轮廓") })
+        let photo = identified("scanOriginalPhoto", in: app)
+        XCTAssertTrue(waitUntil { (photo.value as? String)?.contains("标注展开完成") == true },
+                      "Manual stepping while paused must still expose the complete static result.")
+        XCTAssertTrue((photo.value as? String)?.contains("完整照片") == true)
+
+        // This scene and its predecessor both use the full, stationary photo.
+        // Restrict evidence to the lower face/jaw, excluding the status bar,
+        // Skip, scene title, playback, elapsed text and sliding result panel.
+        let photoFrame = photo.frame
+        let jaw = CGRect(x: photoFrame.minX + photoFrame.width * 0.18,
+                         y: photoFrame.minY + photoFrame.height * 0.40,
+                         width: photoFrame.width * 0.64, height: photoFrame.height * 0.44)
+        pause.tap() // The real Continue action replays this manually inspected scene.
+        let unfolding = try captureMotionPixels(app.screenshot(), name: "motion-unfolding",
+                                               region: jaw, appFrame: app.frame)
+        XCTAssertTrue((photo.value as? String)?.contains("动画展开中") == true,
+                      "The early screenshot must precede the actual annotation completion, not a scene change.")
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("继续") })
+        XCTAssertTrue(title.label.contains("脸型与下颌轮廓"), "Evidence must remain in the same face-angle scene.")
+        XCTAssertEqual(photo.frame, photoFrame, "A moved/resized image must not stand in for drawn annotation motion.")
+        XCTAssertTrue((photo.value as? String)?.contains("动画展开中") == true,
+                      "Pause must be tested during unfinished drawing, not against an already static final frame.")
+        let freezeStart = try captureMotionPixels(app.screenshot(), name: "motion-freeze-start",
+                                                 region: jaw, appFrame: app.frame)
+
+        // Give the real clock enough time to advance if Pause were broken.
+        // No timer/status pixels are in this comparison and there is no app
+        // phase override, injected progress, private photo or polling sleep.
+        let frozenAt = Date()
+        XCTAssertTrue(waitUntil(timeout: 2) { Date().timeIntervalSince(frozenAt) >= 0.8 })
+        let frozen = try captureMotionPixels(app.screenshot(), name: "motion-frozen",
+                                            region: jaw, appFrame: app.frame)
+        XCTAssertEqual(freezeStart.width, frozen.width)
+        XCTAssertEqual(freezeStart.height, frozen.height)
+        XCTAssertEqual(freezeStart.rgba, frozen.rgba, "Pause must freeze the actual unfinished photo-region annotation pixels.")
+        pause.tap()
+        XCTAssertTrue(waitUntil(timeout: 6) { (photo.value as? String)?.contains("标注展开完成") == true })
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("继续") })
+        XCTAssertTrue(title.label.contains("脸型与下颌轮廓"))
+        XCTAssertEqual(photo.frame, photoFrame)
+        let complete = try captureMotionPixels(app.screenshot(), name: "motion-complete",
+                                              region: jaw, appFrame: app.frame)
+        let changedFraction = changedMotionPixelFraction(unfolding, complete)
+        XCTAssertGreaterThan(changedFraction, 0.001,
+                             "Actual lower-face annotation pixels must change; accessibility text or navigation alone is not animation evidence.")
+        XCTAssertGreaterThan(changedMotionPixelFraction(freezeStart, complete), 0.001,
+                             "The paused crop must really be unfinished and advance after Continue; pausing an already static final crop is not evidence.")
+        let evidence = XCTAttachment(string: String(format: "Synthetic jaw crop: %dx%d; changed RGB pixels above 24/765 difference: %.4f%%; paused crop exact match: %@.",
+                                                     complete.width, complete.height, changedFraction * 100,
+                                                     freezeStart.rgba == frozen.rgba ? "true" : "false"))
+        evidence.name = "motion-pixel-evidence"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+    }
+
+    private struct MotionPixelSample {
+        let width: Int
+        let height: Int
+        let rgba: [UInt8]
+    }
+
+    private func captureMotionPixels(_ screenshot: XCUIScreenshot, name: String,
+                                     region: CGRect, appFrame: CGRect) throws -> MotionPixelSample {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let scaleX = CGFloat(image.width) / appFrame.width
+        let scaleY = CGFloat(image.height) / appFrame.height
+        let pixels = CGRect(x: (region.minX - appFrame.minX) * scaleX,
+                            y: (region.minY - appFrame.minY) * scaleY,
+                            width: region.width * scaleX, height: region.height * scaleY).integral
+        let crop = try XCTUnwrap(image.cropping(to: pixels.intersection(CGRect(x: 0, y: 0,
+                                                                             width: CGFloat(image.width), height: CGFloat(image.height)))))
+        let cropAttachment = XCTAttachment(image: UIImage(cgImage: crop))
+        cropAttachment.name = name + "-photo-crop"
+        cropAttachment.lifetime = .keepAlways
+        add(cropAttachment)
+        var rgba = [UInt8](repeating: 0, count: crop.width * crop.height * 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: crop.width, height: crop.height,
+                                                 bitsPerComponent: 8, bytesPerRow: crop.width * 4,
+                                                 space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: CGFloat(crop.width), height: CGFloat(crop.height)))
+        }
+        return MotionPixelSample(width: crop.width, height: crop.height, rgba: rgba)
+    }
+
+    private func changedMotionPixelFraction(_ first: MotionPixelSample, _ second: MotionPixelSample) -> Double {
+        guard first.width == second.width, first.height == second.height,
+              first.rgba.count == second.rgba.count, !first.rgba.isEmpty else { return 0 }
+        var changed = 0
+        for offset in stride(from: 0, to: first.rgba.count, by: 4) {
+            let difference = abs(Int(first.rgba[offset]) - Int(second.rgba[offset]))
+                + abs(Int(first.rgba[offset + 1]) - Int(second.rgba[offset + 1]))
+                + abs(Int(first.rgba[offset + 2]) - Int(second.rgba[offset + 2]))
+            if difference > 24 { changed += 1 }
+        }
+        return Double(changed) / Double(first.width * first.height)
     }
 
     private func openSample(in app: XCUIApplication) {
