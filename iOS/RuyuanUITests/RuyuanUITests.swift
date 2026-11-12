@@ -850,6 +850,7 @@ final class RuyuanUITests: XCTestCase {
         if isReachable(element, in: app) { return true }
         var previousFrame: CGRect?
         var stationaryAttempts = 0
+        var usedHomeScrollFallback = false
         // Retain the old overall bound, but never blindly sweep up and then
         // down. An existing target under the pinned tabs needs a short DOWN
         // drag, not another upward swipe and eventual native sheet dismissal.
@@ -873,9 +874,6 @@ final class RuyuanUITests: XCTestCase {
                 let frame = element.frame
                 guard frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
                       !frame.isEmpty, !frame.isNull else { return false }
-                if previousFrame == frame { stationaryAttempts += 1 } else { stationaryAttempts = 0 }
-                guard stationaryAttempts < 2 else { return false }
-                previousFrame = frame
                 guard (viewport.minX...viewport.maxX).contains(frame.midX) else { return false }
                 if frame.midY < viewport.minY {
                     delta = frame.minY - viewport.minY - 8
@@ -886,6 +884,24 @@ final class RuyuanUITests: XCTestCase {
                     // Do not scroll a covered/disabled element into another page.
                     return isReachable(element, in: app)
                 }
+                if previousFrame == frame { stationaryAttempts += 1 } else { stationaryAttempts = 0 }
+                if stationaryAttempts >= 2 {
+                    // On the initial home viewport, a short drag can leave the
+                    // scroll content unchanged. Try one longer ordinary gesture
+                    // outside the fixed dock, without relaxing reachability.
+                    guard !usedHomeScrollFallback, homeDockIsActive(in: app) else { return false }
+                    usedHomeScrollFallback = true
+                    scrollVertically(in: app, up: delta > 0)
+                    guard element.exists else { return false }
+                    let movedFrame = element.frame
+                    guard movedFrame.minX.isFinite, movedFrame.minY.isFinite,
+                          movedFrame.width.isFinite, movedFrame.height.isFinite,
+                          !movedFrame.isEmpty, !movedFrame.isNull, movedFrame != frame else { return false }
+                    previousFrame = nil
+                    stationaryAttempts = 0
+                    continue
+                }
+                previousFrame = frame
                 delta = min(max(delta, -viewport.height * 0.32), viewport.height * 0.32)
             } else {
                 previousFrame = nil
