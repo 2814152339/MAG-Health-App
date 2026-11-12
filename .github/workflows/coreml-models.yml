@@ -1,0 +1,106 @@
+name: Convert Verified Skin Classifiers to Core ML
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Prototype acne first; all converts the three pinned checkpoints"
+        required: true
+        default: acne
+        type: choice
+        options:
+          - acne
+          - all
+          - wrinkles
+          - skin_type
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coreml-skin-${{ github.ref }}-${{ inputs.models }}
+  cancel-in-progress: false
+
+jobs:
+  convert:
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        model: ${{ fromJSON((inputs.models == 'all' && '["acne","wrinkles","skin_type"]') || format('["{0}"]', inputs.models || 'acne')) }}
+    steps:
+      - name: Checkout source only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up native Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+          architecture: arm64
+          cache: pip
+          cache-dependency-path: scripts/requirements-coreml.lock.txt
+
+      - name: Require actual macOS ARM64 prediction environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          python -c 'import platform; print(platform.platform(), platform.python_version())'
+
+      - name: Install hash-locked binary conversion dependencies
+        shell: bash
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r scripts/requirements-coreml.lock.txt
+
+      - name: Cache pinned public inference weights only
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: backend/models/skin/${{ matrix.model }}
+          key: coreml-source-${{ matrix.model }}-${{ hashFiles('backend/ruyuan/skin_model_manifest.json') }}
+
+      - name: Download only the selected pinned model from author repository
+        shell: bash
+        env:
+          MODEL_ID: ${{ matrix.model }}
+          ARTIFACTS: ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS"
+          python -u scripts/download_skin_models.py --models "$MODEL_ID" --workers 2 2>&1 | tee "$ARTIFACTS/download.log"
+
+      - name: Convert float16 and verify actual Core ML CPU outputs against PyTorch
+        shell: bash
+        env:
+          MODEL_ID: ${{ matrix.model }}
+          ARTIFACTS: ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          TOKENIZERS_PARALLELISM: 'false'
+        run: |
+          set -euo pipefail
+          python -u scripts/convert_skin_classifiers.py --models "$MODEL_ID" --output "$ARTIFACTS" 2>&1 | tee "$ARTIFACTS/conversion.log"
+          python -m pip freeze > "$ARTIFACTS/installed-dependencies.txt"
+          cp scripts/requirements-coreml.lock.txt "$ARTIFACTS/requirements-coreml.lock.txt"
+          cp backend/ruyuan/skin_model_manifest.json "$ARTIFACTS/source-model-manifest.json"
+
+      - name: Upload verified package or failure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Ruyuan-CoreML-${{ matrix.model }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/Ruyuan-CoreML-*.zip
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/*-coreml-manifest.json
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/conversion-failed.json
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/*.log
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/*.txt
+            ${{ runner.temp }}/ruyuan-coreml-${{ matrix.model }}/source-model-manifest.json
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0

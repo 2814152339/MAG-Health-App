@@ -123,15 +123,39 @@ enum FaceSegmentationService {
             guard highY > lowY, right > left else { return nil }
             let start = max(2, Int(lowY * Double(height))), end = min(height - 5, Int(highY * Double(height)))
             guard end > start else { return nil }
+            // Upsampling probabilities creates an uncertain band between confident hair and skin.
+            // Requiring adjacent >=0.65 probabilities would suppress genuine boundaries entirely.
+            let maxGap = max(2, Int(ceil(faceHeight * Double(height) * 0.04)))
             var candidates: [NormalizedPoint] = []
             for column in 0..<11 {
                 let x = left + (right - left) * (0.25 + Double(column) * 0.05)
                 var boundary: Double?
                 for y in start..<end {
                     let py = (Double(y) + 0.5) / Double(height)
-                    let hairAbove = (1...2).allSatisfy { accepts(.hair, x: x, y: py - Double($0) / Double(height)) }
                     let skinBelow = (0...4).allSatisfy { accepts(.faceSkin, x: x, y: py + Double($0) / Double(height)) }
-                    if hairAbove && skinBelow { boundary = py }
+                    guard skinBelow else { continue }
+                    let columnX = min(width - 1, max(0, Int(x * Double(width))))
+                    for gap in 1...maxGap {
+                        let above = y - gap
+                        guard above >= start, above >= 1 else { break }
+                        let hairAbove = (0...1).allSatisfy { offset in
+                            accepts(.hair, x: x, y: (Double(above - offset) + 0.5) / Double(height))
+                        }
+                        guard hairAbove else { continue }
+                        let band = (above...y).allSatisfy { row in
+                            let i = row * width + columnX, label = categories[i]
+                            return (label == Category.hair.rawValue || label == Category.faceSkin.rawValue)
+                                && confidence[Int(label)][i] >= 0.4
+                        }
+                        guard band else { break }
+                        // Use an observed category seam, not an invented midpoint in the gap.
+                        let seams = ((above + 1)...y).filter { row in
+                            categories[(row - 1) * width + columnX] == Category.hair.rawValue
+                                && categories[row * width + columnX] == Category.faceSkin.rawValue
+                        }
+                        if let seam = seams.last { boundary = (Double(seam) + 0.5) / Double(height) }
+                        break
+                    }
                 }
                 if let boundary { candidates.append(.init(x: x, y: boundary)) }
             }
@@ -155,7 +179,7 @@ enum FaceSegmentationService {
             guard hair < brow, brow < nose, nose < chin else { return ([], nil, nil) }
             let total = chin - hair
             let definitions = [("upper", "上段", brow - hair), ("middle", "中段", nose - brow), ("lower", "下段", chin - nose)]
-            let note = "上界为真实模型多列一致的可见发肤边界（置信度≥0.65），不是已确认的解剖发际线；刘海、发套、妆容可能改变边界。眉线为双眉均值，鼻底/颏底为Vision最大Y；三段和100%，无美丑评分。可用手动标定复核。"
+            let note = "上界为真实模型多列一致的可见发肤类别交界；交界两侧要求连续毛发/皮肤置信度≥0.65，允许≤脸高4%的插值不确定带（只含毛发/面部皮肤，最大类概率≥0.4）。不是已确认的解剖发际线；刘海、发套、妆容可能改变边界。眉线为双眉均值，鼻底/颏底为Vision最大Y；三段和100%，无美丑评分。可用手动标定复核。"
             let metrics = definitions.map { id, title, distance in
                 GeometryMetric(id: "model-third-" + id, title: "可见边界" + title + "占比", value: distance / total * 100, unit: "%", note: note)
             }
@@ -189,8 +213,10 @@ enum FaceSegmentationService {
         let options = ImageSegmenterOptions()
         options.baseOptions.modelAssetPath = url.path
         options.runningMode = .image
-        options.outputCategoryMask = true
-        options.outputConfidenceMasks = true
+        // The official 1.2.2 *binary* still exposes shouldOutput..., despite newer source/docs
+        // renaming these to output... . Use the fetched xcframework's actual headers.
+        options.shouldOutputCategoryMask = true
+        options.shouldOutputConfidenceMasks = true
         let segmenter = try ImageSegmenter(options: options)
         guard segmenter.labels == ["background", "hair", "body-skin", "face-skin", "clothes", "others"] else { throw Failure.invalidModel }
         let result = try segmenter.segment(image: MPImage(uiImage: UIImage(cgImage: image, scale: 1, orientation: .up)))

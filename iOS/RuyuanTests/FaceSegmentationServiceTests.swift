@@ -85,6 +85,25 @@ final class FaceSegmentationServiceTests: XCTestCase {
         XCTAssertThrowsError(try FaceSegmentationService.Mask(width: 2, height: 2, categories: [0, 0, 0, 0], confidence: probabilities))
     }
 
+    func testHairBoundaryUsesObservedSeamAcrossNarrowInterpolatedConfidenceBand() throws {
+        let width = 100, height = 100
+        var labels = [UInt8](repeating: 3, count: width * height)
+        var probabilities = (0..<6).map { _ in [Float](repeating: 0, count: width * height) }
+        for y in 0..<height { for x in 0..<width {
+            let i = y * width + x
+            labels[i] = y < 20 ? 1 : 3
+            probabilities[Int(labels[i])][i] = (18...20).contains(y) ? 0.55 : 0.9
+        } }
+        let input = try FaceSegmentationService.Mask(width: width, height: height, categories: labels, confidence: probabilities)
+        let box = CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.9)
+        let points = try XCTUnwrap(input.visibleHairBoundary(landmarks: landmarks, faceBox: box))
+        XCTAssertEqual(points[0].y, 0.205, accuracy: 0.0001, "Use the actual class seam, not the confidence-bracket midpoint")
+        // An intervening accessory is not an uncertain hair/skin edge and must not be bridged.
+        for x in 0..<width { labels[20 * width + x] = 5; probabilities[5][20 * width + x] = 0.9 }
+        let occluded = try FaceSegmentationService.Mask(width: width, height: height, categories: labels, confidence: probabilities)
+        XCTAssertNil(occluded.visibleHairBoundary(landmarks: landmarks, faceBox: box))
+    }
+
     func testAppearanceUsesSemanticMaskInsteadOfAcceptingAnAccessoryHighlight() throws {
         let width = 640, height = 640
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
@@ -102,5 +121,37 @@ final class FaceSegmentationServiceTests: XCTestCase {
         XCTAssertTrue(highlight.paths.isEmpty)
         XCTAssertTrue(highlight.source.contains("Google-SelfieMulticlass256"))
         XCTAssertTrue(result.summary.contains("本机Google六分类"))
+    }
+
+    func testCompleteGeometryAppearanceAndSemanticReportStaysInsideValidationBudget() throws {
+        let width = 640, height = 640, box = CGRect(x: 0.12, y: 0.08, width: 0.76, height: 0.84)
+        let input = try mask(width: width, height: height) { x, y in
+            if y < 128 { return .hair }
+            return x % 9 == 0 ? .accessories : .faceSkin
+        }
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height { for x in 0..<width {
+            let i = (y * width + x) * 4
+            pixels[i] = 182; pixels[i + 1] = 137; pixels[i + 2] = 111
+        } }
+        let appearance = AppearanceAnalyzer.analyze(raster: .init(width: width, height: height, pixels: pixels),
+            landmarks: landmarks, faceBox: box, segmentation: input)
+        let boundary = input.boundaryGeometry(landmarks: landmarks, faceBox: box)
+        var paths = landmarks.map { LandmarkPath(id: $0.key, points: $0.value, closed: false) }
+        if let path = boundary.path { paths.append(path) }
+        var overlays = appearance.overlays + input.overlays(landmarks: landmarks, faceBox: box)
+            + FaceGeometryAnalyzer.overlays(landmarks: landmarks, width: width, height: height)
+        if let overlay = boundary.overlay { overlays.append(overlay) }
+        let geometry = LocalAnalyzer.geometryMetrics(landmarks, width: width, height: height)
+            + FaceGeometryAnalyzer.metrics(landmarks: landmarks, width: width, height: height) + boundary.metrics
+        let report = AnalysisReport(id: "segmentation-budget", createdAt: Date(), origin: .local, status: "test",
+            imageFileName: "synthetic.jpg", imageWidth: width, imageHeight: height, geometry: geometry,
+            skin: appearance.metrics, landmarks: paths, overlays: overlays, quality: [],
+            modelVersion: FaceSegmentationService.source, summary: appearance.summary)
+        XCTAssertNoThrow(try ReportValidator.validate(report))
+        XCTAssertNoThrow(try FaceCalibration.applying(to: report, hairlineY: 0.2, pupilDistanceMM: nil))
+        XCTAssertLessThanOrEqual(report.overlays.count, 49, "Leave room for the user's calibration overlay")
+        XCTAssertLessThanOrEqual(report.landmarks.count + overlays.flatMap(\.paths).count, 10_000)
+        XCTAssertTrue(overlays.flatMap(\.paths).flatMap { $0 }.allSatisfy { (0...1).contains($0.x) && (0...1).contains($0.y) })
     }
 }

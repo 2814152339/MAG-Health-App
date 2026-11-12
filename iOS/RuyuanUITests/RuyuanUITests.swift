@@ -72,15 +72,18 @@ final class RuyuanUITests: XCTestCase {
 
         let chart = app.staticTexts["分区域纹理响应"].firstMatch
         XCTAssertTrue(reveal(chart, in: app), "Aging must include the synthetic regional coverage chart.")
+        let chartContainer = identified("regionalLineChart", in: app)
+        XCTAssertTrue(chartContainer.exists)
         for region in ["额头", "眉间", "鼻唇", "眼周"] {
-            XCTAssertTrue(app.staticTexts[region].firstMatch.exists, "Missing coverage region: \(region)")
+            XCTAssertTrue(chartContainer.staticTexts[region].firstMatch.exists, "Missing coverage region: \(region)")
         }
-        let chartValues = app.staticTexts.allElementsBoundByIndex.filter {
+        let chartValues = chartContainer.staticTexts.allElementsBoundByIndex.filter {
             $0.label.range(of: #"^[0-9]+(?:\.[0-9]+)?%$"#, options: .regularExpression) != nil
         }
         XCTAssertGreaterThanOrEqual(chartValues.count, 4, "The four chart bars must use actual bundled synthetic percentages, not missing-value placeholders.")
         let chartNote = app.staticTexts["仅为照片中纹理响应的区域覆盖率，不是皱纹根数或临床严重程度。缺失项不补值。"].firstMatch
         XCTAssertTrue(reveal(chartNote, in: app))
+        XCTAssertTrue(revealFully(chartContainer, in: app), "The captured chart must not be hidden under the pinned tab strip.")
         capture("detail-aging", app: app)
 
         tapDetailTab("tone", app: app)
@@ -100,6 +103,15 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["演示图层 · 非真实检测结果"].waitForExistence(timeout: 3))
         XCTAssertTrue(identified("overlayViewer", in: app).waitForExistence(timeout: 5),
                       "The viewer must expose its stable accessibility group as well as its navigation bar.")
+        identified("overlayZoomIn", in: app).tap()
+        XCTAssertTrue(app.staticTexts["150%"].waitForExistence(timeout: 3))
+        identified("overlayZoomOut", in: app).tap()
+        XCTAssertTrue(app.staticTexts["100%"].waitForExistence(timeout: 3))
+        let focus = identified("overlayFocusToggle", in: app)
+        focus.tap()
+        XCTAssertTrue(waitUntil { focus.label.contains("全图") })
+        focus.tap()
+        XCTAssertTrue(waitUntil { focus.label.contains("局部") })
         capture("overlay", app: app)
 
         let original = app.segmentedControls.buttons["原图"].firstMatch
@@ -127,6 +139,101 @@ final class RuyuanUITests: XCTestCase {
         openSample(in: app)
         let saved = app.staticTexts["反馈已保存在本机，不会自动上传。"].firstMatch
         XCTAssertTrue(reveal(saved, in: app), "Local feedback must survive an app relaunch.")
+    }
+
+    func testReportCalibrationFeedbackEditorAndPDFShare() {
+        let app = XCUIApplication()
+        app.launch()
+        openSample(in: app)
+        let details = identified("openReportDetails", in: app)
+        XCTAssertTrue(reveal(details, in: app)); details.tap()
+        XCTAssertTrue(identified("reportDetailSheet", in: app).waitForExistence(timeout: 5))
+        let geometry = identified("reportGeometryTools", in: app)
+        XCTAssertTrue(reveal(geometry, in: app)); geometry.tap()
+        let calibration = identified("openCalibrationTools", in: app)
+        XCTAssertTrue(reveal(calibration, in: app)); calibration.tap()
+        let calibrationBar = app.navigationBars["手动标定"]
+        XCTAssertTrue(calibrationBar.waitForExistence(timeout: 5))
+        let saveCalibration = app.buttons["保存标定"].firstMatch
+        XCTAssertTrue(saveCalibration.exists)
+        XCTAssertFalse(saveCalibration.isEnabled, "Synthetic demonstration calibration must never overwrite a real report.")
+        capture("calibration-read-only", app: app)
+        calibrationBar.buttons.firstMatch.tap()
+        XCTAssertTrue(identified("reportDetailSheet", in: app).waitForExistence(timeout: 5))
+        app.buttons["关闭报告详情"].firstMatch.tap()
+
+        let feedback = identified("reportFeedbackNote", in: app)
+        XCTAssertTrue(reveal(feedback, in: app)); feedback.tap()
+        let feedbackBar = app.navigationBars["本次报告反馈"]
+        XCTAssertTrue(feedbackBar.waitForExistence(timeout: 5))
+        let editor = app.textViews["reportFeedbackEditor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        let existing = editor.value as? String ?? ""
+        let note = "Synthetic UI feedback only."
+        editor.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + note)
+        feedbackBar.buttons["保存"].tap()
+        XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(reveal(feedback, in: app)); feedback.tap()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, note)
+        feedbackBar.buttons["取消"].tap()
+
+        let share = identified("shareReportPDF", in: app)
+        XCTAssertTrue(reveal(share, in: app)); share.tap()
+        let sharePanel = identified("reportShareSheet", in: app)
+        XCTAssertTrue(sharePanel.waitForExistence(timeout: 8), "PDF export must actually open the system share controller.")
+        capture("share-pdf", app: app)
+        let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).allElementsBoundByIndex.first { $0.isHittable }
+        if let close { close.tap() } else { sharePanel.swipeDown() }
+        XCTAssertTrue(waitUntil { !sharePanel.exists }, "The system share sheet must dismiss back to the report.")
+        XCTAssertTrue(identified("reportOverview", in: app).exists)
+    }
+
+    func testSyntheticScannerScenesPlaybackAndSkip() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-scan"]
+        app.launch()
+        XCTAssertTrue(identified("analysisScanner", in: app).waitForExistence(timeout: 8))
+        let pause = identified("scanPausePlayback", in: app)
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("继续") }, "Pausing must expose the resume action.")
+        XCTAssertTrue(identified("sampleScanNotice", in: app).exists)
+        let previous = identified("scanPreviousScene", in: app)
+        let next = identified("scanNextScene", in: app)
+        // App launch / AX synchronization can exceed the first short scene.
+        // Pause first, then use the real previous control to reach scene one.
+        for _ in 0..<10 where previous.isEnabled { previous.tap() }
+        XCTAssertFalse(previous.isEnabled)
+        let sceneTitle = identified("scanSceneTitle", in: app)
+        let titles = ["定位面部关键点", "脸型与下颌轮廓", "面部纵向比例", "五眼与眼间距", "面部三角与下巴",
+                      "眉眼精细分析", "鼻唇比例", "面部纹路与肌理", "肤色与点状外观", "眼周外观"]
+        for (index, title) in titles.enumerated() {
+            XCTAssertTrue(waitUntil { sceneTitle.label.contains(title) }, "Missing scanner scene: \(title)")
+            XCTAssertTrue(identified("scanMeasurementPanel", in: app).exists)
+            if index == 5 || index == 9 {
+                let photo = identified("scanOriginalPhoto", in: app)
+                XCTAssertTrue(waitUntil { (photo.value as? String)?.contains("局部") == true },
+                              "Brow and eye scenes must focus on this synthetic report's real ROI points.")
+            }
+            capture(String(format: "scanner-%02d", index + 1), app: app)
+            if index < titles.count - 1 { next.tap() }
+        }
+        previous.tap()
+        XCTAssertTrue(waitUntil { sceneTitle.label.contains(titles[8]) })
+        next.tap()
+        XCTAssertTrue(waitUntil { sceneTitle.label.contains(titles[9]) })
+        // Resume then pause again; explicit navigation is tested while paused,
+        // without waiting for a fabricated timer or racing scene auto-advance.
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("暂停") })
+        pause.tap()
+        XCTAssertTrue(waitUntil { pause.label.contains("继续") })
+        identified("skipScanButton", in: app).tap()
+        XCTAssertTrue(app.navigationBars["演示报告"].waitForExistence(timeout: 8))
+        XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 5))
+        capture("scanner-report", app: app)
     }
 
     private func openSample(in app: XCUIApplication) {
@@ -193,7 +300,10 @@ final class RuyuanUITests: XCTestCase {
         let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
         // isHittable alone incorrectly reported true for the offscreen sample
         // row whose center was underneath the fixed CTA dock / system tab bar.
-        return unobscuredViewport(in: app).contains(center)
+        guard unobscuredViewport(in: app).contains(center) else { return false }
+        let tabs = identified("reportDimensionTabs", in: app)
+        if !element.identifier.hasPrefix("detail-tab-"), tabs.exists, tabs.frame.contains(center) { return false }
+        return true
     }
 
     private func scrollVertically(in app: XCUIApplication, up: Bool) {
@@ -227,6 +337,30 @@ final class RuyuanUITests: XCTestCase {
             if isReachable(element, in: app) { return true }
         }
         return isReachable(element, in: app)
+    }
+
+    private func revealFully(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        guard reveal(element, in: app) else { return false }
+        for _ in 0..<8 {
+            var viewport = unobscuredViewport(in: app).insetBy(dx: 3, dy: 3)
+            let tabs = identified("reportDimensionTabs", in: app)
+            if tabs.exists, tabs.frame.minY <= viewport.minY + 4, tabs.frame.maxY > viewport.minY {
+                let bottom = viewport.maxY
+                viewport.origin.y = tabs.frame.maxY + 4
+                viewport.size.height = max(0, bottom - viewport.minY)
+            }
+            let frame = element.frame
+            if frame.minY >= viewport.minY && frame.maxY <= viewport.maxY { return true }
+            guard frame.height <= viewport.height, viewport.height > 40 else { return false }
+            let needed = frame.maxY > viewport.maxY ? frame.maxY - viewport.maxY + 6 : frame.minY - viewport.minY - 6
+            let delta = min(max(needed, -viewport.height * 0.35), viewport.height * 0.35)
+            let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            let x = viewport.midX - app.frame.minX
+            let y = viewport.midY - app.frame.minY
+            origin.withOffset(CGVector(dx: x, dy: y + delta / 2)).press(forDuration: 0.05,
+                thenDragTo: origin.withOffset(CGVector(dx: x, dy: y - delta / 2)))
+        }
+        return false
     }
 
     private func waitUntil(timeout: TimeInterval = 5, _ condition: @escaping () -> Bool) -> Bool {

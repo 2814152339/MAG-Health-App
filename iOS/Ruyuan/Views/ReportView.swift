@@ -528,8 +528,8 @@ private struct ReportDetailSheet: View {
                 HStack(alignment: .top, spacing: 13) {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("\(index + 1). \(item.title)").font(.subheadline.weight(.semibold))
-                        Text(item.valueText).font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
-                        Label(layer == nil ? "点击缩略图查看原图" : "图片标色代表对应观察区域",
+                        Text(observationValue(item)).font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
+                        Label(item.id.hasPrefix("trained-") ? "整张面部分类 · 无像素位置输出" : layer == nil ? "点击缩略图查看原图" : "图片标色代表对应观察区域",
                               systemImage: layer == nil ? "photo" : "circle.lefthalf.filled")
                             .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -544,13 +544,45 @@ private struct ReportDetailSheet: View {
                 Text(explanation(for: item)).font(.caption).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 itemIndicator(item)
-                if !report.isSample && report.modelVersion.contains(AppearanceAnalyzer.version) {
+                if item.id.hasPrefix("trained-") || (!report.isSample && report.modelVersion.contains(AppearanceAnalyzer.version)) {
                     DisclosureGroup("计算依据与来源") {
                         Text(item.note).font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4).padding(.top,6).textSelection(.enabled)
                     }.font(.caption2).tint(RuyuanStyle.purple)
                 }
             }
         }
+    }
+
+    /// Translate only the checkpoint's documented labels, while retaining the
+    /// original class and probability. A classifier confidence is not coverage.
+    private func observationValue(_ item: SkinItem) -> String {
+        guard item.id.hasPrefix("trained-") else { return item.valueText }
+        var value = item.valueText
+        let statuses = ["runtime_not_installed": "未安装推理运行库", "checksum_mismatch": "模型校验未通过",
+                        "not_downloaded": "模型尚未下载", "inference_failed": "本次推理失败", "disabled": "未启用"]
+        for (raw, chinese) in statuses { value = value.replacingOccurrences(of: raw, with: chinese + "（" + raw + "）") }
+        let labels: [(String, String)]
+        if item.id.hasPrefix("trained-skin_type") {
+            labels = [("dry", "干性图像类别"), ("normal", "正常图像类别"), ("oily", "油性图像类别")]
+        } else if item.id.hasPrefix("trained-wrinkles") {
+            labels = [("non-wrinkle", "无线纹图像类别"), ("wrinkle", "有线纹图像类别")]
+        } else { labels = [] }
+        // Word boundaries prevent translating 'wrinkle' inside 'non-wrinkle'
+        // or rewriting a previously inserted original label twice.
+        if !labels.isEmpty {
+            let alternatives = labels.map { NSRegularExpression.escapedPattern(for: $0.0) }.joined(separator: "|")
+            if let regex = try? NSRegularExpression(pattern: "(?<![A-Za-z-])(?:" + alternatives + ")(?![A-Za-z-])", options: [.caseInsensitive]) {
+                let original = value as NSString
+                for match in regex.matches(in: value, range: NSRange(location: 0, length: original.length)).reversed() {
+                    let raw = original.substring(with: match.range)
+                    if let translated = labels.first(where: { $0.0.caseInsensitiveCompare(raw) == .orderedSame })?.1,
+                       let range = Range(match.range, in: value) {
+                        value.replaceSubrange(range, with: translated + "（" + raw + "）")
+                    }
+                }
+            }
+        }
+        return value
     }
 
     @ViewBuilder
@@ -588,6 +620,15 @@ private struct ReportDetailSheet: View {
     }
 
     private func explanation(for item:SkinItem)->String {
+        if item.id.hasPrefix("trained-") {
+            if item.valueText.hasPrefix("未运行") { return "本次没有此训练模型的可靠分类结果，保留实际未运行状态，不补分类、置信度或分数。" }
+            if item.id.hasSuffix("-distribution") { return "各类别的模型 softmax 概率，未做人群校准。它们不是准确率、皮肤面积或临床严重度比例。" }
+            let uncertainty = item.valueText.hasPrefix("不确定候选") ? "本次最高类别概率较低，按不确定候选看待。" : ""
+            if item.id == "trained-skin_type" { return uncertainty + "训练模型对整张面部裁剪作 dry／normal／oily 图像分类；不测量含水量或皮脂量，也不覆盖本人填写的实际肤感。" }
+            if item.id == "trained-acne" { return uncertainty + "保留权重配置中的 level 原始类别，不将其改写为临床分级。模型不区分丘疹、结节或粉刺，不输出病变位置、数量或掩膜。" }
+            if item.id == "trained-wrinkles" { return uncertainty + "模型判断面部裁剪更接近 wrinkle 或 non-wrinkle 图像类别。不是皱纹根数、松弛程度或肤龄；下方区域覆盖率来自独立外观方法。" }
+            return item.note
+        }
         guard !report.isSample,report.modelVersion.contains(AppearanceAnalyzer.version) else{return item.note}
         switch item.id {
         case "highlight":return "黄色标记展示本次照片的高亮反光分布。可以点开原图对照额头、鼻部和两颊，再结合自己当天的出油感记录。"

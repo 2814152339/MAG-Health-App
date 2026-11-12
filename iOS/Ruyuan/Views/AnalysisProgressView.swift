@@ -11,7 +11,7 @@ private enum ScanScene: Int, CaseIterable {
         switch self {
         case .outline: return ["face-landmarks"]
         case .face: return ["jaw", "contour", "face-shape", "chin"]
-        case .thirds: return ["third", "vertical", "user-calibration"]
+        case .thirds: return ["third", "vertical", "user-calibration", "model-hairline"]
         case .eyes: return ["five", "eye-inner", "left-eye-width", "right-eye-width", "eye-gap"]
         case .triangle: return ["triangle", "chin"]
         case .brow: return ["brow", "eye-aspect", "canthus", "inner-angle", "geometry-eye"]
@@ -47,6 +47,8 @@ struct AnalysisProgressView: View {
     @State private var paused = false
     @State private var skipRequested = false
     @State private var showCancel = false
+    @State private var showsSemanticMask = false
+    @State private var showsMaskViewer = false
     private var scene: ScanScene { ScanScene.allCases[min(sceneIndex, ScanScene.allCases.count - 1)] }
 
     var body: some View {
@@ -87,6 +89,11 @@ struct AnalysisProgressView: View {
                 if store.scanReport != nil { store.finishScanPresentation() } else { store.cancelAnalysis() }
             }
         } message: { Text("尚未完成的本次任务会被取消。") }
+        .fullScreenCover(isPresented: $showsMaskViewer) {
+            if let report = store.scanReport {
+                OverlayView(report: report, initialLayerID: "semantic-face-skin")
+            }
+        }
     }
 
     private var header: some View {
@@ -96,6 +103,12 @@ struct AnalysisProgressView: View {
             } label: { Image(systemName: "chevron.left").font(.body).frame(width: 36, height: 42) }
                 .accessibilityLabel("返回报告")
             Text("测肤质").font(.subheadline.weight(.medium))
+            if store.scanReport?.isSample == true {
+                Text("演示扫描").font(.system(size: 9, weight: .semibold))
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .background(RuyuanStyle.lilac, in: Capsule())
+                    .accessibilityIdentifier("sampleScanNotice")
+            }
             Spacer()
             Button("跳过") {
                 if store.scanReport != nil { store.finishScanPresentation() } else { skipRequested = true }
@@ -147,7 +160,12 @@ struct AnalysisProgressView: View {
     }
 
     private func displayLayers(_ report: AnalysisReport) -> [OverlayLayer] {
-        report.overlays.filter { layer in scene.tokens.contains { layer.id.localizedCaseInsensitiveContains($0) } }.map { layer in
+        report.overlays.filter { layer in
+            if layer.id.hasPrefix("semantic-") {
+                return showsSemanticMask && layer.id == "semantic-face-skin"
+            }
+            return scene.tokens.contains { layer.id.localizedCaseInsensitiveContains($0) }
+        }.map { layer in
             guard layer.id.hasPrefix("geometry-") else { return layer }
             var styled = layer; styled.colorHex = "8C86FF"; return styled
         }
@@ -181,17 +199,30 @@ struct AnalysisProgressView: View {
                         .padding(3).background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 3))
                         .position(transform.position(item.anchor))
                 }
-                HStack(spacing: 5) {
-                    Circle().fill(Color(hex: "8A82FF")).frame(width: 5, height: 5)
-                    Text("\(scene.title) · 已计算结果回放").font(.system(size: 10))
-                        .accessibilityIdentifier("scanSceneTitle")
-                    Spacer()
-                    Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 9).monospacedDigit())
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 5) {
+                        Circle().fill(Color(hex: "8A82FF")).frame(width: 5, height: 5)
+                        Text("\(scene.title) · \(report.isSample ? "合成示例回放" : "已计算结果回放")").font(.system(size: 10))
+                            .accessibilityIdentifier("scanSceneTitle")
+                        Spacer()
+                        Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 9).monospacedDigit())
+                    }
+                    if report.overlays.contains(where: { $0.id == "semantic-face-skin" && !$0.paths.isEmpty }) {
+                        HStack(spacing: 14) {
+                            Button { showsSemanticMask.toggle() } label: {
+                                Label("模型皮肤掩膜", systemImage: showsSemanticMask ? "checkmark.circle.fill" : "circle")
+                            }.accessibilityIdentifier("scanSemanticMaskToggle")
+                                .accessibilityValue(showsSemanticMask ? "显示" : "隐藏")
+                            Button("放大核对") { showsMaskViewer = true }
+                                .accessibilityIdentifier("scanSemanticMaskViewer")
+                            Spacer()
+                        }.font(.system(size: 10)).buttonStyle(.plain)
+                    }
                 }.foregroundStyle(.white).padding(10).background(.black.opacity(0.20))
             }.animation(.easeInOut(duration: 0.5), value: sceneIndex)
         }.clipped().accessibilityElement(children: .contain)
-        .accessibilityLabel("本次照片与实际测量标注")
-        .accessibilityValue(focus == nil ? "完整照片" : "已按实际眉眼点位定位局部")
+        .accessibilityLabel(report.isSample ? "合成示意与示例测量标注" : "本次照片与实际测量标注")
+        .accessibilityValue(focus == nil ? "完整照片" : "已按本报告眉眼点位定位局部")
         .accessibilityIdentifier("scanOriginalPhoto")
     }
 
@@ -227,7 +258,9 @@ struct AnalysisProgressView: View {
                 let eyebrows = report.landmarks.filter { ["leftEyebrow", "rightEyebrow"].contains($0.id) }.flatMap(\.points)
                 let brow = eyebrows.isEmpty ? nil : eyebrows.map(\.y).reduce(0, +) / Double(eyebrows.count)
                 let nose = report.landmarks.first(where: { $0.id == "nose" })?.points.map(\.y).max()
-                let guides = [report.calibration?.hairlineY, brow, nose, bottom].compactMap { $0 }
+                let modelBoundary = report.landmarks.first(where: { $0.id == "modelVisibleHairBoundary" })?.points.map(\.y).sorted()
+                let modelTop = modelBoundary.flatMap { $0.isEmpty ? nil : $0[$0.count / 2] }
+                let guides = [report.calibration?.hairlineY ?? modelTop, brow, nose, bottom].compactMap { $0 }
                 for y in guides { line(.init(x: left, y: y), .init(x: right, y: y)) }
             } else {
                 let eyes = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
@@ -255,9 +288,10 @@ struct AnalysisProgressView: View {
             add("v2-jaw-left-angle", "二维轮廓角", ["faceContour"], dy: 0.17)
             add("v2-contour-aspect", "可见轮廓高宽比", ["leftEyebrow", "rightEyebrow"], dy: -0.11)
         case .thirds:
-            add("calibrated-upper-third", "上庭占比", ["leftEyebrow", "rightEyebrow"], dy: -0.08)
-            add("calibrated-middle-third", "中庭占比", ["nose"], dy: -0.05)
-            add("calibrated-lower-third", "下庭占比", ["outerLips"], dy: 0.08)
+            let calibrated = report.geometry.contains { $0.id == "calibrated-upper-third" && $0.value != nil }
+            add(calibrated ? "calibrated-upper-third" : "model-third-upper", calibrated ? "标定上庭占比" : "可见边界上段", ["leftEyebrow", "rightEyebrow"], dy: -0.08)
+            add(calibrated ? "calibrated-middle-third" : "model-third-middle", calibrated ? "标定中庭占比" : "可见边界中段", ["nose"], dy: -0.05)
+            add(calibrated ? "calibrated-lower-third" : "model-third-lower", calibrated ? "标定下庭占比" : "可见边界下段", ["outerLips"], dy: 0.08)
         case .eyes:
             add("v2-five-left-eye", "眼宽 / 平均眼宽", ["leftEye"], dy: -0.055)
             add("v2-five-right-eye", "眼宽 / 平均眼宽", ["rightEye"], dy: -0.055)
@@ -285,13 +319,20 @@ struct AnalysisProgressView: View {
     }
 
     private func resultPanel(_ report: AnalysisReport) -> some View {
-        let matchingMetrics = report.geometry.filter { metric in metric.value != nil && scene.tokens.contains(where: { metric.id.localizedCaseInsensitiveContains($0) }) }
-        let items = report.skin.flatMap(\.items).filter { item in scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) }
+        let hasManualThirds = report.geometry.contains { $0.id == "calibrated-upper-third" && $0.value != nil }
+        let matchingMetrics = report.geometry.filter { metric in
+            guard metric.value != nil else { return false }
+            if scene == .thirds { return metric.id.hasPrefix(hasManualThirds ? "calibrated-" : "model-third-") && metric.id.contains("third") }
+            return scene.tokens.contains(where: { metric.id.localizedCaseInsensitiveContains($0) })
+        }
+        let items = report.skin.flatMap(\.items).filter { item in
+            !item.id.hasSuffix("-distribution") && scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) })
+        }
         return VStack(alignment: .leading, spacing: 7) {
             HStack { Text(scene.title).font(.caption.weight(.semibold)); Spacer(); Image(systemName: "scope").font(.caption) }
             if scene.rawValue <= ScanScene.nose.rawValue {
                 if matchingMetrics.isEmpty {
-                    Text(scene == .thirds ? "发际线尚未标记，三庭不补值；可在报告中手动标定。" : "显示本次实际识别的面部轮廓与五官点位。")
+                    Text(scene == .thirds ? "缺少稳定可见发肤边界及手动标记，不补三段值；可在报告中标定。" : report.isSample ? "当前点位来自手工构造的示例，不是相机检测。" : "显示本次实际识别的面部轮廓与五官点位。")
                         .font(.caption2).lineSpacing(3)
                 } else {
                     ForEach(Array(matchingMetrics.prefix(3))) { metric in
@@ -300,6 +341,10 @@ struct AnalysisProgressView: View {
                             Text(metric.formattedValue).font(.system(size: 11, weight: .medium)).monospacedDigit()
                         }
                     }
+                }
+                if scene == .thirds && !matchingMetrics.isEmpty && !hasManualThirds {
+                    Text("上界是模型可见发肤边界，不等同已确认的解剖发际线。")
+                        .font(.system(size: 9)).foregroundStyle(Color(hex: "C6BFFF"))
                 }
             } else if items.isEmpty {
                 Text("本次没有这一部位的可靠分项，不生成假计数或严重程度。").font(.caption2).lineSpacing(3)
