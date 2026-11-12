@@ -1,0 +1,86 @@
+{
+  "repository": "ZombaSY/Pore-Net-release",
+  "revision": "6f851e0d911bd73f41dd905c685129b13d52e1bc",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 11356,
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/LICENSE"
+    },
+    {
+      "path": "README.md",
+      "bytes": 505,
+      "sha256": "425b40c3679f9c6f6426c3c04bf5edb714d8bdf9dc1a4c35b1d92423e5e91238",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/README.md"
+    },
+    {
+      "path": "model_checkpoints/PoreNet.pt",
+      "bytes": 27390,
+      "sha256": "a2d0f5f20eee45197612d55d2404ef988832dbcd50dc949bfcd16f5978711da7",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/model_checkpoints/PoreNet.pt"
+    },
+    {
+      "path": "models/model.py",
+      "bytes": 3874,
+      "sha256": "486afb01a9c9b9c33b98c08dcc391dc710ddba8a1b9ecfc33d99f88608a51607",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/models/model.py"
+    },
+    {
+      "path": "models/dataloader.py",
+      "bytes": 10443,
+      "sha256": "0672741951bc66b340fba923bc65d727b3ceefb3b33e959bdb91a3ac5909d45e",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/models/dataloader.py"
+    },
+    {
+      "path": "hyper_parameters/inference.yml",
+      "bytes": 470,
+      "sha256": "4cd498d498a6c1d43b384f717c2bab9167dc92a1d8d27d790ca6cf371675651e",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/hyper_parameters/inference.yml"
+    },
+    {
+      "path": "data_examples/input_cropped/20190315_144533_white.png",
+      "bytes": 3136208,
+      "sha256": "2d050468ccfc712352ac34709142f79bc67084e039120d3ba2c7d0f226c14f5f",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/input_cropped/20190315_144533_white.png"
+    },
+    {
+      "path": "data_examples/label_cropped/20190315_144533_white.png",
+      "bytes": 188918,
+      "sha256": "8e2329833477be157f17ff32d211562fe9d59b02e0c4db6f8d0063acaef3c43f",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/label_cropped/20190315_144533_white.png"
+    },
+    {
+      "path": "data_examples/mask_cropped/20190315_144533_white.png",
+      "bytes": 15272,
+      "sha256": "5aeee1b554907007962839c5b9f99ce41228ffcbdce0fc79c971c617bb6a43ad",
+      "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/mask_cropped/20190315_144533_white.png"
+    }
+  ],
+  "schema": 1,
+  "license": "Apache-2.0",
+  "paper": "https://doi.org/10.1109/CBMS55023.2022.00062",
+  "source": "https://github.com/ZombaSY/Pore-Net-release",
+  "input": {
+    "name": "image",
+    "width": 1024,
+    "height": 1280,
+    "color": "RGB",
+    "imageScale": 0.00392156862745098,
+    "mean": [
+      0.512,
+      0.459,
+      0.353
+    ],
+    "std": [
+      0.254,
+      0.226,
+      0.219
+    ]
+  },
+  "threshold": 0.25,
+  "weightLicenseEvidence": "Repository Apache-2.0 LICENSE; checkpoint is versioned in the same repository; no separate weight restriction found",
+  "trainingDataStatus": "Repository does not disclose full training data sources, subject consent or held-out split; do not label as independently commercially validated.",
+  "authorPaperPage": "https://www.lulu-lab.com/bbs/board.php?bo_table=library&wr_id=3",
+  "publisherPaperPage": "https://ieeexplore.ieee.org/abstract/document/9867133"
+}
