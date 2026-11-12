@@ -157,10 +157,11 @@ struct LocalAnalyzer {
         overlays += detailed.overlays
         overlays += FaceGeometryAnalyzer.overlays(landmarks: lookup, width: width, height: height)
 
+        let classifications = try SkinClassifierService.classify(image: cgImage, faceBox: box)
         progress(.report)
         try Task.checkCancellation()
         let caution = quality.contains { !$0.passed }
-        return AnalysisReport(
+        let report = AnalysisReport(
             id: reportID, createdAt: Date(), origin: .local,
             status: caution ? "已完成 · 有拍摄质量提示" : "已完成 · 照片外观参考",
             imageFileName: imageFileName, imageWidth: width, imageHeight: height,
@@ -169,6 +170,7 @@ struct LocalAnalyzer {
             modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2; " + (segmentation != nil ? FaceSegmentationService.source : "semantic segmentation unavailable; geometric ROI fallback"),
             summary: segmentationNote + detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
         )
+        return SkinClassifierService.applying(classifications, to: report)
     }
 
     static func uprightCGImage(_ image: UIImage) -> CGImage? {

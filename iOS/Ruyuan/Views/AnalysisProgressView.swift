@@ -272,10 +272,16 @@ struct AnalysisProgressView: View {
 
     private func measurements(_ report: AnalysisReport) -> [ScanMeasurement] {
         func center(_ names: [String]) -> NormalizedPoint? {
-            let points = report.landmarks.filter { names.contains($0.id) }.flatMap(\.points)
+            let matchingPaths: [LandmarkPath] = report.landmarks.filter { names.contains($0.id) }
+            let points: [NormalizedPoint] = matchingPaths.flatMap { $0.points }
             guard !points.isEmpty else { return nil }
-            return .init(x: points.map(\.x).reduce(0, +) / Double(points.count),
-                         y: points.map(\.y).reduce(0, +) / Double(points.count))
+            var sumX: Double = 0
+            var sumY: Double = 0
+            for point in points { sumX += point.x; sumY += point.y }
+            let count: Double = Double(points.count)
+            let meanX: Double = sumX / count
+            let meanY: Double = sumY / count
+            return NormalizedPoint(x: meanX, y: meanY)
         }
         var values: [ScanMeasurement] = []
         func add(_ id: String, _ title: String, _ names: [String], dy: Double = 0) {
