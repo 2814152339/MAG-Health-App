@@ -338,6 +338,8 @@ final class RuyuanUITests: XCTestCase {
         let closeDetails = app.buttons["关闭报告详情"].firstMatch
         XCTAssertTrue(closeDetails.waitForExistence(timeout: 5))
         closeDetails.tap()
+        XCTAssertTrue(waitUntil { !detail.exists },
+                      "The detail sheet must finish dismissing before using the underlying report.")
         XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 5))
         let like = identified("reportFeedbackLike", in: app)
         XCTAssertTrue(reveal(like, in: app))
@@ -422,7 +424,10 @@ final class RuyuanUITests: XCTestCase {
         capture("calibration-read-only", app: app)
         calibrationBar.buttons.firstMatch.tap()
         XCTAssertTrue(identified("reportDetailSheet", in: app).waitForExistence(timeout: 5))
+        let detailSheet = identified("reportDetailSheet", in: app)
         app.buttons["关闭报告详情"].firstMatch.tap()
+        XCTAssertTrue(waitUntil { !detailSheet.exists },
+                      "The detail sheet must finish dismissing before revealing report feedback.")
 
         let feedback = identified("reportFeedbackNote", in: app)
         XCTAssertTrue(reveal(feedback, in: app)); feedback.tap()
@@ -435,11 +440,15 @@ final class RuyuanUITests: XCTestCase {
         let note = "Synthetic UI feedback only."
         editor.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count) + note)
         feedbackBar.buttons["保存"].tap()
+        XCTAssertTrue(waitUntil { !feedbackBar.exists },
+                      "Saving feedback must dismiss its editor before reopening it from the report.")
         XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 5))
         XCTAssertTrue(reveal(feedback, in: app)); feedback.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertEqual(editor.value as? String, note)
         feedbackBar.buttons["取消"].tap()
+        XCTAssertTrue(waitUntil { !feedbackBar.exists },
+                      "Cancelling feedback must dismiss its editor before using PDF sharing.")
 
         let share = identified("shareReportPDF", in: app)
         XCTAssertTrue(reveal(share, in: app)); share.tap()
