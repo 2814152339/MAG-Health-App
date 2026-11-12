@@ -179,7 +179,9 @@ struct OverlayView: View {
     @Environment(\.dismiss) private var dismiss
     let report: AnalysisReport
     var initialLayerID: String? = nil
+    var initialItemReference: OverlayItemReference? = nil
     @State private var selectedLayerID: String?
+    @State private var selectedItemReference: OverlayItemReference?
     @State private var showOverlay = true
     @State private var showLandmarks = false
     @State private var scale: CGFloat = 1
@@ -190,7 +192,13 @@ struct OverlayView: View {
     @State private var showsLegend = true
 
     private var selectedLayer: OverlayLayer? {
-        report.overlays.first { $0.id == selectedLayerID }
+        let matches = report.overlays.filter { $0.id == selectedLayerID }
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    private var selectedObservation: SkinItem? {
+        OverlayItemPresentation.resolvedItem(selectedItemReference, in: report,
+            selectedLayerID: selectedLayerID, showOverlay: showOverlay)
     }
 
     var body: some View {
@@ -233,6 +241,7 @@ struct OverlayView: View {
         }
         .onAppear {
             selectedLayerID = initialLayerID
+            selectedItemReference = initialItemReference
             showOverlay = initialLayerID != nil
             showLandmarks = false
         }
@@ -288,11 +297,21 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
                         Circle().fill(Color(hex: layer.colorHex)).frame(width: 7, height: 7)
-                        Text(layer.title).font(.caption.weight(.semibold))
+                        Text(selectedObservation?.title ?? layer.title).font(.caption.weight(.semibold))
+                            .accessibilityIdentifier("overlayObservationTitle")
                         Spacer()
                         Text(report.isSample ? "演示图层" : "照片外观参考")
                             .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
                     }.foregroundStyle(RuyuanStyle.ink)
+                    if let item = selectedObservation {
+                        Text(item.valueText).font(.subheadline.weight(.semibold))
+                            .foregroundStyle(RuyuanStyle.purple)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("overlayObservationValue")
+                        if item.title != layer.title {
+                            Text(layer.title).font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
+                        }
+                    }
                     Text(layer.note).font(.system(size: 10)).lineSpacing(2).foregroundStyle(RuyuanStyle.muted)
                         .lineLimit(2)
                     if layer.id == "appearance-under-eye" {
@@ -318,6 +337,10 @@ struct OverlayView: View {
                         ForEach(report.overlays) { layer in
                             Button {
                                 selectedLayerID = layer.id; showOverlay = true; showLandmarks = false; focusRegion = nil
+                                // The layer strip is not a particular report card.
+                                // Do not carry a previous card's value to it, even
+                                // if another item shares the newly selected mask.
+                                selectedItemReference = nil
                                 resetZoom()
                             } label: {
                                 HStack(spacing: 5) {
@@ -327,6 +350,7 @@ struct OverlayView: View {
                                     .foregroundStyle(.white)
                                     .background(selectedLayerID == layer.id ? RuyuanStyle.purple : .white.opacity(0.12), in: Capsule())
                             }.buttonStyle(.plain)
+                                .accessibilityIdentifier("overlayLayer-\(layer.id)")
                                 .accessibilityAddTraits(selectedLayerID == layer.id ? .isSelected : [])
                         }
                     }

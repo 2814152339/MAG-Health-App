@@ -4,6 +4,7 @@ import UIKit
 private struct InspectionTarget: Identifiable {
     let id = UUID()
     var layerID: String?
+    var itemReference: OverlayItemReference? = nil
 }
 
 private enum ReportSheet: Identifiable {
@@ -60,7 +61,7 @@ struct ReportView: View {
         }
         .accessibilityIdentifier("reportOverview")
         .fullScreenCover(item: $inspection) { target in
-            OverlayView(report: report, initialLayerID: target.layerID)
+            OverlayView(report: report, initialLayerID: target.layerID, initialItemReference: target.itemReference)
         }
         .sheet(item: $sheet) { destination in
             switch destination {
@@ -589,7 +590,7 @@ private struct ReportDetailSheet: View {
             .accessibilityIdentifier("reportDetailSheet")
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(item: $inspection) { target in
-                OverlayView(report: report, initialLayerID: target.layerID)
+                OverlayView(report: report, initialLayerID: target.layerID, initialItemReference: target.itemReference)
             }
         }
     }
@@ -707,7 +708,7 @@ private struct ReportDetailSheet: View {
             }
             if let metric, !metric.items.isEmpty {
                 ForEach(Array(metric.items.filter { !$0.id.hasSuffix("-formula") }.enumerated()), id: \.element.id) { index, item in
-                    detailItem(item, index: index)
+                    detailItem(item, index: index, dimension: dimension)
                 }
                 if dimension == .aging { regionalLineChart(metric.items) }
                 if metric.items.contains(where: { $0.id.hasSuffix("-formula") }) {
@@ -768,8 +769,9 @@ private struct ReportDetailSheet: View {
         .accessibilityIdentifier("regionalLineChart")
     }
 
-    private func detailItem(_ item: SkinItem, index: Int) -> some View {
+    private func detailItem(_ item: SkinItem, index: Int, dimension: SkinDimension) -> some View {
         let layer = report.overlays.first { $0.id == item.overlayID }
+        let itemReference = OverlayItemPresentation.reference(in: report, dimension: dimension, itemID: item.id)
         return RuyuanCard(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 13) {
@@ -780,7 +782,8 @@ private struct ReportDetailSheet: View {
                               systemImage: layer == nil ? "photo" : "circle.lefthalf.filled")
                             .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    overlayThumbnail(layer, width: 62, height: 78, accessibilityID: "detail-overlay-\(item.id)")
+                    overlayThumbnail(layer, width: 62, height: 78, accessibilityID: "detail-overlay-\(item.id)",
+                                     itemReference: itemReference)
                 }
                 if let layer {
                     HStack(spacing: 5) {
@@ -932,8 +935,9 @@ private struct ReportDetailSheet: View {
     }
 
     private func overlayThumbnail(_ layer: OverlayLayer?, width: CGFloat, height: CGFloat,
-                                  accessibilityID: String? = nil) -> some View {
-        Button { inspection = InspectionTarget(layerID: layer?.id) } label: {
+                                  accessibilityID: String? = nil,
+                                  itemReference: OverlayItemReference? = nil) -> some View {
+        Button { inspection = InspectionTarget(layerID: layer?.id, itemReference: itemReference) } label: {
             ZStack(alignment: .topTrailing) {
                 ReportPhotoView(report: report, image: store.image(for: report), layers: layer.map { [$0] } ?? [])
                     .frame(width: width, height: height).background(Color(hex: "28252D"))

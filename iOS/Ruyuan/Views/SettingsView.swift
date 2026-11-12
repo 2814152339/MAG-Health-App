@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
+    @AppStorage(PhotoAnalysisInputRouter.assessmentPreferenceKey) private var requestsAssessment = false
     @State private var serverEnabled = false
     @State private var serverURL = ""
     @State private var serverToken = ""
@@ -37,6 +38,16 @@ struct SettingsView: View {
                 }
             }
             .foregroundStyle(RuyuanStyle.ink)
+
+            Section {
+                Toggle("检测前填写日常肤感", isOn: $requestsAssessment)
+                    .tint(RuyuanStyle.purple)
+                    .accessibilityIdentifier("assessmentOptInToggle")
+            } header: {
+                Text("可选的日常肤感")
+            } footer: {
+                Text("默认关闭，确认照片后直接分析。开启后可自愿回答 3 个肤感问题，也可跳过或取消；回答仅用于本次报告。不填写时，相关自评分保持空缺。此开关立即生效。")
+            }
 
             Section {
                 Toggle("启用服务端分析", isOn: $serverEnabled)

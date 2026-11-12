@@ -204,6 +204,11 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["演示图层 · 非真实检测结果"].waitForExistence(timeout: 3))
         XCTAssertTrue(identified("overlayViewer", in: app).waitForExistence(timeout: 5),
                       "The viewer must expose its stable accessibility group as well as its navigation bar.")
+        let observationValue = app.staticTexts["overlayObservationValue"]
+        XCTAssertTrue(observationValue.waitForExistence(timeout: 3))
+        XCTAssertEqual(observationValue.label, "较均匀 · 演示",
+                       "The enlarged layer must retain this exact tapped sample item's original value, not a score inferred from the mask.")
+        XCTAssertEqual(app.staticTexts["overlayObservationTitle"].label, "肤色均匀度")
         identified("overlayZoomIn", in: app).tap()
         XCTAssertTrue(app.staticTexts["150%"].waitForExistence(timeout: 3))
         identified("overlayZoomOut", in: app).tap()
@@ -219,9 +224,17 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(original.waitForExistence(timeout: 5))
         original.tap()
         XCTAssertTrue(waitUntil { original.isSelected }, "Original-photo comparison should become selected.")
+        XCTAssertTrue(waitUntil { !observationValue.exists }, "Original-only mode must not present an observation value.")
         let annotated = app.segmentedControls.buttons["演示标注"].firstMatch
         annotated.tap()
         XCTAssertTrue(waitUntil { annotated.isSelected })
+        XCTAssertTrue(observationValue.waitForExistence(timeout: 3))
+        XCTAssertEqual(observationValue.label, "较均匀 · 演示")
+        let genericLayer = app.buttons["overlayLayer-sample-pigment"]
+        XCTAssertTrue(genericLayer.isHittable)
+        genericLayer.tap()
+        XCTAssertTrue(waitUntil { !observationValue.exists },
+                      "A generic layer-strip selection must clear the card reference, including when selecting the same mask.")
         overlayNav.buttons["完成"].firstMatch.tap()
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
 

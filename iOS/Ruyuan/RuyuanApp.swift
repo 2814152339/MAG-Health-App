@@ -73,13 +73,10 @@ struct RootView: View {
     @State private var showCamera = false
     @State private var showPicker = false
     @State private var consentAction: Int?
-    @State private var pendingInput: UIImage?
-    @State private var pendingDepth: DepthSnapshot?
-    @State private var pendingDepthNotice: String?
+    @State private var inputRouter = PhotoAnalysisInputRouter()
+    @AppStorage(PhotoAnalysisInputRouter.assessmentPreferenceKey) private var requestsAssessment = false
     @State private var approvedCaptureAction: Int?
     @State private var showAssessment = false
-    @State private var selectedAssessment: SkinSelfAssessment?
-    @State private var assessmentReady = false
 
     var body: some View {
         TabView(selection: $tab) {
@@ -96,9 +93,7 @@ struct RootView: View {
         .tint(RuyuanStyle.purple)
         .fullScreenCover(isPresented: $showCamera, onDismiss: consumeInputIfReady) {
             CameraView(onDepthCapture: { capture in
-                pendingInput = capture.image
-                pendingDepth = capture.validatedDepth()
-                pendingDepthNotice = capture.depthNotice
+                inputRouter.receive(image: capture.image, depth: capture.validatedDepth(), depthNotice: capture.depthNotice)
                 showCamera = false
             })
         }
@@ -106,10 +101,10 @@ struct RootView: View {
             PhotoLibraryPicker { result in
                 switch result {
                 case .success(let image):
-                    pendingInput = image
-                    pendingDepth = nil
-                    pendingDepthNotice = "本次为相册照片，未携带受信同次 TrueDepth 深度；按二维照片分析。"
-                case .failure(let error): store.errorMessage = error.localizedDescription
+                    inputRouter.receiveImportedImage(image)
+                case .failure(let error):
+                    inputRouter.cancel()
+                    store.errorMessage = error.localizedDescription
                 }
                 showPicker = false
             }
@@ -119,25 +114,15 @@ struct RootView: View {
             AnalysisProgressView().interactiveDismissDisabled()
         }
         .sheet(isPresented: $showAssessment, onDismiss: {
-            guard assessmentReady, let image = pendingInput else { return }
-            let depth = pendingDepth
-            let depthNotice = pendingDepthNotice
-            pendingInput = nil
-            pendingDepth = nil
-            pendingDepthNotice = nil
-            assessmentReady = false
-            Task { await store.analyze(image: image, assessment: selectedAssessment, depth: depth, depthNotice: depthNotice) }
+            // A cancel or a late duplicate dismissal cannot revive a request.
+            guard let input = inputRouter.afterAssessmentDismissal() else { return }
+            startAnalysis(input)
         }) {
             SkinAssessmentView(onContinue: { assessment in
-                selectedAssessment = assessment
-                assessmentReady = true
+                guard inputRouter.completeAssessment(assessment) else { return }
                 showAssessment = false
             }, onCancel: {
-                pendingInput = nil
-                pendingDepth = nil
-                pendingDepthNotice = nil
-                assessmentReady = false
-                selectedAssessment = nil
+                inputRouter.cancel()
                 showAssessment = false
             })
         }
@@ -190,14 +175,25 @@ struct RootView: View {
     }
 
     private func consumeInputIfReady() {
-        guard !showCamera, !showPicker, let image = pendingInput else { return }
-        _ = image
-        selectedAssessment = nil
-        assessmentReady = false
-        showAssessment = true
+        switch inputRouter.afterPhotoDismissal(cameraPresented: showCamera, pickerPresented: showPicker,
+                                               requestsAssessment: requestsAssessment) {
+        case .wait: break
+        case .showAssessment: showAssessment = true
+        case .analyze(let input): startAnalysis(input)
+        }
+    }
+
+    private func startAnalysis(_ input: PhotoAnalysisInput) {
+        // The router has already cleared the pending image/answers/depth before
+        // this Task can yield or a second onDismiss callback can be delivered.
+        Task {
+            await store.analyze(image: input.image, assessment: input.assessment,
+                                depth: input.depth, depthNotice: input.depthNotice)
+        }
     }
 
     private func openCapture(_ action: Int) {
+        inputRouter.cancel()
         if action == 0 { showCamera = true } else { showPicker = true }
     }
 
