@@ -274,6 +274,10 @@ struct AnalysisProgressView: View {
                 return showsSemanticMask && layer.id == "semantic-face-skin"
             }
             if scene == .outline { return false }
+            if scene == .brow {
+                guard let focus = ScanFocusPresentation.eyeFocus(landmarks: report.landmarks) else { return false }
+                return focus.allowsGeometryLayer(id: layer.id)
+            }
             if scene == .face && layer.id.contains("jaw-left") { return false }
             if scene == .thirds && (layer.id.hasPrefix("geometry-model-hairline") || layer.id.hasPrefix("geometry-user-calibration")) {
                 // The same source guides are animated below as white dotted
@@ -290,13 +294,7 @@ struct AnalysisProgressView: View {
 
     private func region(_ report: AnalysisReport) -> CGRect? {
         guard scene == .brow || scene == .eyeArea else { return nil }
-        let eye = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
-            .min { ($0.points.map(\.x).min() ?? 1) < ($1.points.map(\.x).min() ?? 1) }
-        guard let eye else { return nil }
-        let browID = eye.id == "leftEye" ? "leftEyebrow" : "rightEyebrow"
-        let points = eye.points + (report.landmarks.first { $0.id == browID }?.points ?? [])
-        return ReportPhotoTransform.region(points: points, padding: CGSize(width: 0.13, height: 0.19),
-                                           minimum: CGSize(width: 0.56, height: 0.66))
+        return ScanFocusPresentation.eyeFocus(landmarks: report.landmarks)?.region
     }
 
     private func scanPhoto(_ report: AnalysisReport, focus: CGRect, elapsed: Double,
@@ -329,6 +327,7 @@ struct AnalysisProgressView: View {
                             .opacity(labelOpacity)
                             .offset(y: CGFloat(1 - labelOpacity) * 5)
                             .allowsHitTesting(false)
+                            .accessibilityIdentifier("scanMeasurement-\(item.id)")
                     }
                     if !sampling.isEmpty {
                         Text("眼下采样范围").font(.system(size: 11)).foregroundStyle(.white)
@@ -356,7 +355,7 @@ struct AnalysisProgressView: View {
         case .thirds: names = []
         case .eyes: names = ["leftEye", "rightEye"]
         case .triangle: names = []
-        case .brow: names = ["leftEyebrow", "rightEyebrow", "leftEye", "rightEye"]
+        case .brow: names = ScanFocusPresentation.eyeFocus(landmarks: report.landmarks)?.landmarkIDs ?? []
         case .nose: names = ["nose", "outerLips", "innerLips"]
         default: names = []
         }
@@ -495,11 +494,11 @@ struct AnalysisProgressView: View {
             add("v2-chin-height-width", "颏区高宽比", ["faceContour"], dy: 0.20)
             addDistance("depth-surface-lip-to-chin", names: ["outerLips", "faceContour"], dy: 0.12)
         case .brow:
-            for (eye, brow) in [("leftEye", "leftEyebrow"), ("rightEye", "rightEyebrow")] {
+            if let focus = ScanFocusPresentation.eyeFocus(landmarks: report.landmarks) {
                 // This number belongs to the endpoint–arch–endpoint arc,
                 // not the unrelated eyebrow chord's horizontal tilt.
-                add("v2-\(brow)-arch-angle", "眉弓轮廓夹角", [brow], dy: -0.045)
-                add("v2-\(eye)-inner-angle", "眼内侧轮廓角", [eye], dy: 0.045)
+                add("v2-\(focus.browID)-arch-angle", "眉弓轮廓夹角", [focus.browID], dy: -0.045)
+                add("v2-\(focus.eyeID)-inner-angle", "眼内侧轮廓角", [focus.eyeID], dy: 0.045)
             }
         case .nose:
             add("nose-mouth", "鼻宽 / 嘴宽", ["nose"], dy: -0.055)
@@ -580,16 +579,15 @@ struct AnalysisProgressView: View {
         case .face: priority = ["v2-jaw-right-angle", "v2-contour-aspect"]
         case .triangle: priority = ["v2-triangle-mouth-angle", "v2-chin-height-width"]
         case .brow:
-            let eye = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
-                .min { ($0.points.map(\.x).min() ?? 1) < ($1.points.map(\.x).min() ?? 1) }?.id
-            let brow = eye == "leftEye" ? "leftEyebrow" : "rightEyebrow"
-            priority = ["v2-\(brow)-arch-angle", "v2-\(eye ?? "leftEye")-inner-angle"]
+            guard let focus = ScanFocusPresentation.eyeFocus(landmarks: report.landmarks) else { return [] }
+            priority = ["v2-\(focus.browID)-arch-angle", "v2-\(focus.eyeID)-inner-angle"]
         case .eyes: priority = ["v2-five-gap", "v2-five-left-eye"]
         case .nose: priority = ["nose-mouth", "lip-upper-lower", "v2-nose-height-width", "v2-upper-lower-lip"]
         default: priority = []
         }
         if priority.isEmpty { return report.geometry }
         let chosen = priority.compactMap { id in report.geometry.first { $0.id == id && $0.value != nil } }
+        if scene == .brow { return chosen }
         return chosen.isEmpty ? report.geometry : chosen
     }
 

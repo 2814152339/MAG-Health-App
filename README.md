@@ -2,13 +2,22 @@
 
 **v0.3 · 按参考视频逐项实施、持续验收。** SwiftUI 原生界面，最低 iOS 17，仅 iPhone 竖屏；不是网页套壳。本工程独立保存在如愿美学项目目录，功能与原规划 F01–F35 的对应范围见 [功能对照](docs/功能对照.md)。
 
+## 最新验证与接续状态（2026-11-12 下午）
+
+- **已验证安装包：v0.3 build14**，源码 `e017357d790364aa310c8f3139bee425ce06dd99`；[iPhone arm64 Release 43167387697](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43167387697) 与 [模拟器43167391059](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43167391059) 均成功，实际 **134单元＋5UI，0失败**。7模型、报告/原图/图层/校准/PDF/反馈与10幕原有回归保留。
+- 扫描已有逐点、角臂张开、尺寸线延伸、延迟滑入科技卡及单照片连续推近；眼下采样范围改细框。真实合成录屏41.295秒已SHA/CRC校验并逐帧查看，下颌开角及不叠影得到实际画面证据。合成演示与用户照片分开。
+- 完整IPA位于 `C:\Users\Administrator\Downloads\如愿美学_iPhone_v0.3_build14_20261112.ipa`，717,021,311字节，SHA256 `2c3abe08c336b4d796cb16ccab7d342a7727b88b63fbf45c02e1940f43f4764a`，114项CRC/arm64/iPhoneOS/build14/7模型独立核对；未在用户手机安装。
+- **后续源码与此包分开**：build15新增黑底拍照/确认页及长结论交互测试；build16准备修复局部眉眼另一侧截字，并使五维详情连续滚动、Tab定位与滚动同步。后续预计149单元＋8UI，尚未SDK验证或打包，不包含在build14。
+- **真实外部阻断**：build15的两个工作流43168971973/43168975238被GitHub账户付款/支出上限拒绝，两个job均steps为空；没有运行编译或测试。已保留原始check annotation，不循环重试，不擅改账单。账户恢复后只构建最新冻结源码并重新验收。
+- 用户下午不在，后续不请求其安装、录屏或配合测试。私人人脸视频与抽帧仅在本机，合成CI录屏单独标记。完整复刻目标仍保留，未以这次阶段验收替代全部目标。
+
 ## Windows + 自己的 iPhone
 
 1. 在 [iPhone 真机云端构建](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/workflows/ios-device.yml) 下载成功运行中的 `Ruyuan-iPhone-Unsigned-运行编号-尝试编号` 产物，解压外层 ZIP 取出 `.ipa`。
 2. 用 Windows 本地签名工具和自己的 Apple ID 签名，通过 USB 安装到 iOS 17 及以上的 iPhone，无需先购买开发者会员。
 3. 按 [iPhone 安装指南](docs/iPhone安装.md) 完成电脑信任、本人签名账号信任及开发者模式。账号密码仅在本机签名工具中输入。
 
-**当前已验证基线：v0.3 build11。** 同一源码 `a56aa325e56a4bc14e38ed7777491b6236540b58` 的[真机 Release](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183441)与[XCTest](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183803)均通过，实际97单元+4 UI、0失败；完整IPA已校验。用户此前安装的是旧v0.1，新版实机安装/相机/方向/TrueDepth/耗时仍待手机连接验收。初始报告弹层已按原视频实图校准，保留摘要→雷达顺序及可拖动展开，验证详情见[持续检查点](docs/持续实施检查点.md)。
+**build11 历史验证基线（最新状态见上方）：** 同一源码 `a56aa325e56a4bc14e38ed7777491b6236540b58` 的[真机 Release](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183441)与[XCTest](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183803)均通过，实际97单元+4 UI、0失败；完整IPA已校验。用户此前安装的是旧v0.1，新版实机安装/相机/方向/TrueDepth/耗时仍待手机连接验收。初始报告弹层已按原视频实图校准，保留摘要→雷达顺序及可拖动展开，验证详情见[持续检查点](docs/持续实施检查点.md)。
 
 未签名 IPA 需要本地签名后安装；云编译成功不等于已经安装或完成真机测试。
 
@@ -62,8 +71,8 @@
 
 私有仓库：[2814152339/ruyuan-aesthetics-ios](https://github.com/2814152339/ruyuan-aesthetics-ios)。修改 iOS 源码、真机构建脚本或工作流后推送 `main`，会生成 iPhone 未签名 IPA；也可手动构建。XCTest 云端工作流保留手动运行，见 [云端构建说明](docs/云端构建.md)。
 
-- **v0.3 build11 真机 Release：通过。**[运行43148183441](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183441)，arm64 / iPhoneOS / 0.3.0 build11，完整IPA源SHA与全部ZIP CRC已再次核对。
-- **v0.3 build11 XCTest：97单元+4 UI，0失败。**[运行43148183803](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183803)，与IPA相同源码。实际覆盖10扫描/ROI/前后/暂停/继续/跳过、初始报告摘要/拖动保持、五Tab/雷达/四区图/图层、PDF正常点击关闭/返回、标定/反馈重启。
+- **历史 v0.3 build11 真机 Release：通过。**[运行43148183441](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183441)，arm64 / iPhoneOS / 0.3.0 build11，完整IPA源SHA与全部ZIP CRC已再次核对。
+- **历史 v0.3 build11 XCTest：97单元+4 UI，0失败。**[运行43148183803](https://github.com/2814152339/ruyuan-aesthetics-ios/actions/runs/43148183803)，与IPA相同源码。实际覆盖10扫描/ROI/前后/暂停/继续/跳过、初始报告摘要/拖动保持、五Tab/雷达/四区图/图层、PDF正常点击关闭/返回、标定/反馈重启。
 - Windows 本次后端显式实际模型回归48/48、0跳过（`RUYUAN_RUN_REAL_MODELS=1`），15.258秒；制品安装/发布脚本27/27。普通默认测试跳过真实模型时不抵充该结果。
 - v0.2历史36单元+2 UI、真机包，以及本轮失败留痕均保留在[验证记录](docs/验证记录.md)。新版本尚未在用户手机确认安装，真实相机/方向/耗时、TestFlight与正式发布分别验收。
 

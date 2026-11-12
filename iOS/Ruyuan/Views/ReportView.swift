@@ -429,6 +429,43 @@ private struct ConclusionHeightPreference: PreferenceKey {
     }
 }
 
+private struct ReportDimensionRow: Identifiable {
+    let dimension: SkinDimension
+    let isAnchor: Bool
+    var id: String { Self.identifier(for: dimension, anchor: isAnchor) }
+
+    static var all: [ReportDimensionRow] {
+        SkinDimension.allCases.flatMap { dimension in
+            [ReportDimensionRow(dimension: dimension, isAnchor: true),
+             ReportDimensionRow(dimension: dimension, isAnchor: false)]
+        }
+    }
+
+    static func identifier(for dimension: SkinDimension, anchor: Bool) -> String {
+        "report-dimension-" + dimension.rawValue + (anchor ? "-anchor" : "-content")
+    }
+}
+
+private struct ReportDimensionFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+/// Non-observable scratch cache: per-frame scroll geometry must not force every
+/// thumbnail to reload its photo merely because the viewport moved one point.
+private final class ReportDimensionFrameCache {
+    var frames: [String: CGRect] = [:]
+}
+
+private struct ReportTabStripHeight: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 @MainActor
 private struct ReportDetailSheet: View {
     @EnvironmentObject private var store: AppStore
@@ -437,7 +474,10 @@ private struct ReportDetailSheet: View {
     let initialDimension: SkinDimension
     @State private var selectedDimension: SkinDimension = .waterOil
     @State private var inspection: InspectionTarget?
-    private var metric: SkinMetric? { report.skin.first { $0.dimension == selectedDimension } }
+    @State private var dimensionFrameCache = ReportDimensionFrameCache()
+    @State private var tabStripHeight: CGFloat = 0
+    @State private var requestedDimension: SkinDimension?
+    @State private var initialScrollPerformed = false
 
     init(report: AnalysisReport, initialDimension: SkinDimension) {
         self.report = report
@@ -447,81 +487,185 @@ private struct ReportDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-          VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("皮肤质量解读结果").font(.system(size: 16, weight: .semibold)).foregroundStyle(RuyuanStyle.ink)
-                    Text(report.isSample ? "交互演示 · 不是真实检测" : "照片外观与肤感参考分析")
-                        .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("皮肤质量解读结果").font(.system(size: 16, weight: .semibold)).foregroundStyle(RuyuanStyle.ink)
+                        Text(report.isSample ? "交互演示 · 不是真实检测" : "照片外观与肤感参考分析")
+                            .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                    }
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(RuyuanStyle.muted).frame(width: 30, height: 30)
+                            .background(.white.opacity(0.65), in: Circle())
+                    }.accessibilityLabel("关闭报告详情")
+                }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
+                GeometryReader { viewport in
+                    ScrollViewReader { reader in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                // Each card still owns its own summary expansion state.
+                                ReportSummaryCard(report: report, accessibilityScope: "detail")
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("detailReportSummary")
+                                    .padding(.bottom, 14)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "atom").foregroundStyle(RuyuanStyle.purple)
+                                        Text("综合参考分").font(.subheadline.weight(.semibold))
+                                        Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
+                                    }
+                                    SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 205)
+                                        .accessibilityElement(children: .contain)
+                                        .accessibilityIdentifier("reportRadarChart")
+                                }.padding(.horizontal, 6).padding(.bottom, 14)
+                                Section {
+                                    // Separate direct lazy rows give the proxy a real 1pt
+                                    // target even before a distant dimension is materialized.
+                                    ForEach(ReportDimensionRow.all) { row in
+                                        dimensionRow(row, viewportHeight: viewport.size.height)
+                                            .id(row.id)
+                                    }
+                                    if !report.geometry.isEmpty { geometryContent.padding(.bottom, 14) }
+                                    if !report.overlays.isEmpty { allLayerGallery.padding(.bottom, 14) }
+                                    qualityContent
+                                } header: {
+                                    dimensionTabs { dimension in
+                                        scrollToDimension(dimension, reader: reader, viewportHeight: viewport.size.height)
+                                    }
+                                    .background {
+                                        GeometryReader { bounds in
+                                            Color.clear.preference(key: ReportTabStripHeight.self, value: bounds.size.height)
+                                        }
+                                    }
+                                }
+                                .id("reportDimensionSection")
+                            }.padding(.horizontal, 14).padding(.bottom, 28)
+                        }
+                        .coordinateSpace(name: "reportDimensionScrollSpace")
+                        .accessibilityIdentifier("reportDetailScrollView")
+                        .onPreferenceChange(ReportDimensionFrames.self) { frames in
+                            dimensionFrameCache.frames = frames
+                            synchronizeDimension(using: frames)
+                        }
+                        .onPreferenceChange(ReportTabStripHeight.self) { height in
+                            guard height.isFinite, height > 0, abs(height - tabStripHeight) > 0.01 else { return }
+                            tabStripHeight = height
+                            if let dimension = requestedDimension {
+                                // Initial non-first entry may need one layout pass
+                                // to materialize and measure the pinned header.
+                                scrollToDimension(dimension, reader: reader, viewportHeight: viewport.size.height,
+                                                  measuredTabHeight: height)
+                            } else { synchronizeDimension(using: dimensionFrameCache.frames) }
+                        }
+                        .onChange(of: viewport.size.height) { _, height in
+                            if let dimension = requestedDimension {
+                                scrollToDimension(dimension, reader: reader, viewportHeight: height)
+                            }
+                        }
+                        .simultaneousGesture(DragGesture(minimumDistance: 2).onChanged { _ in
+                            // Real interaction wins over any pending programmatic
+                            // positioning; no timer later restores the old request.
+                            if requestedDimension != nil {
+                                requestedDimension = nil
+                                synchronizeDimension(using: dimensionFrameCache.frames)
+                            }
+                        })
+                        .onAppear {
+                            guard !initialScrollPerformed else { return }
+                            initialScrollPerformed = true
+                            // The normal overview entry keeps the actual summary
+                            // and radar first. A specific dimension entry locates it.
+                            if initialDimension != .waterOil {
+                                scrollToDimension(initialDimension, reader: reader, viewportHeight: viewport.size.height)
+                            }
+                        }
+                    }
                 }
-                Spacer()
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(RuyuanStyle.muted).frame(width: 30, height: 30)
-                        .background(.white.opacity(0.65), in: Circle())
-                }.accessibilityLabel("关闭报告详情")
-            }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
-            GeometryReader { viewport in
-              ScrollViewReader { reader in
-              ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
-                    // The reference opens with its conclusion card, then the
-                    // radar. Scrolling it away is not the same as omitting it.
-                    ReportSummaryCard(report: report, accessibilityScope: "detail")
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("detailReportSummary")
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "atom").foregroundStyle(RuyuanStyle.purple)
-                            Text("综合参考分").font(.subheadline.weight(.semibold))
-                            Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
-                        }
-                        SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 205)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityIdentifier("reportRadarChart")
-                    }.padding(.horizontal, 6)
-                    Section {
-                        VStack(alignment: .leading, spacing: 14) {
-                            dimensionContent
-                            if !report.geometry.isEmpty { geometryContent }
-                            if !report.overlays.isEmpty { allLayerGallery }
-                            qualityContent
-                        }
-                        // A short dimension still needs enough scroll extent
-                        // to bring its tab strip fully to the pinned top. This
-                        // prevents the previous radar's caption being stranded
-                        // above the tabs merely because content hits the bottom.
-                        .frame(minHeight: max(0, viewport.size.height - 66), alignment: .top)
-                    } header: { dimensionTabs }
-                    .id("reportDimensionSection")
-                }.padding(.horizontal, 14).padding(.bottom, 28)
-              }
-              .accessibilityIdentifier("reportDetailScrollView")
-              .onChange(of: selectedDimension) { _, _ in
-                  // A tab switch must not retain the previous dimension's long
-                  // scroll offset (which used to hide the next title/chart).
-                  withAnimation(.easeInOut(duration: 0.25)) {
-                      reader.scrollTo("reportDimensionSection", anchor: .top)
-                  }
-              }
-              }
             }
-        }
-        .background(RuyuanStyle.background)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("reportDetailSheet")
-        .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(item: $inspection) { target in
-            OverlayView(report: report, initialLayerID: target.layerID)
-        }
+            .background(RuyuanStyle.background)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("reportDetailSheet")
+            .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(item: $inspection) { target in
+                OverlayView(report: report, initialLayerID: target.layerID)
+            }
         }
     }
 
-    private var dimensionTabs: some View {
+    @ViewBuilder
+    private func dimensionRow(_ row: ReportDimensionRow, viewportHeight: CGFloat) -> some View {
+        if row.isAnchor {
+            Color.clear.frame(height: 1).accessibilityHidden(true)
+        } else {
+            dimensionContent(for: row.dimension)
+                // Even an empty final dimension can align below the tabs rather
+                // than being clamped short by the end of the scrollable content.
+                .frame(minHeight: row.dimension == .aging ? max(0, viewportHeight - tabStripHeight - 1) : 0,
+                       alignment: .top)
+                .padding(.bottom, 14)
+                .background {
+                    GeometryReader { bounds in
+                        Color.clear.preference(key: ReportDimensionFrames.self,
+                            value: [row.dimension.rawValue: bounds.frame(in: .named("reportDimensionScrollSpace"))])
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("detailDimension-\(row.dimension.rawValue)")
+        }
+    }
+
+    private func scrollToDimension(_ dimension: SkinDimension, reader: ScrollViewProxy,
+                                   viewportHeight: CGFloat, measuredTabHeight: CGFloat? = nil) {
+        if selectedDimension != dimension { selectedDimension = dimension }
+        requestedDimension = dimension
+        let height = measuredTabHeight ?? tabStripHeight
+        let id = ReportDimensionRow.identifier(for: dimension, anchor: true)
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            guard height > 0, viewportHeight > height + 1 else {
+                // This only materializes an offscreen first-entry target. The
+                // actual measured header preference then performs final alignment.
+                reader.scrollTo(id, anchor: .top)
+                return
+            }
+            // scrollTo aligns the same UnitPoint in its target and viewport.
+            // For our 1pt anchor, y = H/(V-1) puts its top at the measured
+            // pinned-tab height H. The following title starts one point below.
+            let y = min(1, max(0, height / (viewportHeight - 1)))
+            reader.scrollTo(id, anchor: UnitPoint(x: 0, y: y))
+        }
+        synchronizeDimension(using: dimensionFrameCache.frames)
+    }
+
+    private func synchronizeDimension(using frames: [String: CGRect]) {
+        guard initialScrollPerformed, tabStripHeight > 0 else { return }
+        let readingLine = tabStripHeight + 1
+        let valid = SkinDimension.allCases.compactMap { dimension -> (SkinDimension, CGRect)? in
+            guard let frame = frames[dimension.rawValue], frame.minY.isFinite, frame.maxY.isFinite,
+                  frame.height > 0 else { return nil }
+            return (dimension, frame)
+        }
+        if let requested = requestedDimension {
+            // Only actual geometry, not a guessed animation duration, settles a
+            // tab request. A real drag cancels it immediately above.
+            guard let frame = frames[requested.rawValue], abs(frame.minY - readingLine) <= 2 else { return }
+            requestedDimension = nil
+            if selectedDimension != requested { selectedDimension = requested }
+            return
+        }
+        let preceding = valid.filter { $0.1.minY <= readingLine }.max { $0.1.minY < $1.1.minY }
+        let next = valid.min { $0.1.minY < $1.1.minY }
+        if let dimension = (preceding ?? next)?.0, selectedDimension != dimension { selectedDimension = dimension }
+    }
+
+    private func dimensionTabs(onSelect: @escaping (SkinDimension) -> Void) -> some View {
         HStack(spacing: 5) {
             ForEach(SkinDimension.allCases) { dimension in
                 let value = report.skin.first { $0.dimension == dimension }
-                Button { withAnimation(.easeInOut(duration: 0.2)) { selectedDimension = dimension } } label: {
+                Button { onSelect(dimension) } label: {
                     VStack(spacing: 4) {
                         Text(dimension.title).font(.system(size: 11, weight: .medium))
                         Text(value?.score == nil ? "未评分" : "\(reportScore(value?.score))分")
@@ -543,15 +687,18 @@ private struct ReportDetailSheet: View {
         .accessibilityIdentifier("reportDimensionTabs")
     }
 
-    private var dimensionContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private func dimensionContent(for dimension: SkinDimension) -> some View {
+        let metric = report.skin.first { $0.dimension == dimension }
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Image(systemName: selectedDimension.symbol).font(.title3)
-                Text(selectedDimension.title).font(.title3.weight(.semibold))
+                Image(systemName: dimension.symbol).font(.title3)
+                Text(dimension.title).font(.title3.weight(.semibold))
                 Text(metric?.score == nil ? "未评分" : reportScore(metric?.score))
                     .font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
                 Spacer()
             }.foregroundStyle(RuyuanStyle.ink)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("detailDimensionHeading-\(dimension.rawValue)")
             Text(metric?.status ?? "本报告未提供该维度的结果")
                 .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
             if let source = metric?.scoreSource {
@@ -562,7 +709,7 @@ private struct ReportDetailSheet: View {
                 ForEach(Array(metric.items.filter { !$0.id.hasSuffix("-formula") }.enumerated()), id: \.element.id) { index, item in
                     detailItem(item, index: index)
                 }
-                if selectedDimension == .aging { regionalLineChart(metric.items) }
+                if dimension == .aging { regionalLineChart(metric.items) }
                 if metric.items.contains(where: { $0.id.hasSuffix("-formula") }) {
                     DisclosureGroup("参考分计算依据") {
                         ForEach(metric.items.filter { $0.id.hasSuffix("-formula") }) { item in

@@ -242,6 +242,54 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(reveal(saved, in: app), "Local feedback must survive an app relaunch.")
     }
 
+    func testSampleDetailScrollsContinuouslyAndTracksVisibleDimension() {
+        let app = XCUIApplication()
+        app.launch()
+        openSample(in: app)
+        let detailsButton = identified("openReportDetails", in: app)
+        XCTAssertTrue(reveal(detailsButton, in: app))
+        detailsButton.tap()
+        XCTAssertTrue(identified("reportDetailSheet", in: app).waitForExistence(timeout: 5))
+        expandReportDetails(in: app)
+        tapDetailTab("waterOil", app: app)
+        let tabs = identified("reportDimensionTabs", in: app)
+        let waterHeading = identified("detailDimensionHeading-waterOil", in: app)
+        XCTAssertTrue(waitUntil {
+            waterHeading.exists && waterHeading.frame.minY >= tabs.frame.maxY - 2 &&
+                waterHeading.frame.minY <= tabs.frame.maxY + 12
+        }, "A tab jump must position the actual heading below the measured sticky strip.")
+        let toneHeading = identified("detailDimensionHeading-tone", in: app)
+        let lastWaterItem = app.staticTexts["2. 水分"].firstMatch
+        let toneTab = identified("detail-tab-tone", in: app)
+        var witnessedAdjacentDimensions = false
+        // Ordinary short drags, not tab clicks, move across the real boundary.
+        // A small distance avoids skipping the single-card tone section.
+        for _ in 0..<18 {
+            if isReachable(lastWaterItem, in: app) && isReachable(toneHeading, in: app) {
+                if !witnessedAdjacentDimensions { capture("detail-adjacent-dimensions", app: app) }
+                witnessedAdjacentDimensions = true
+            }
+            if toneTab.isSelected { break }
+            let viewport = unobscuredViewport(in: app)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let x = viewport.midX - app.frame.minX
+            let y = viewport.minY - app.frame.minY
+            origin.withOffset(CGVector(dx: x, dy: y + viewport.height * 0.72)).press(forDuration: 0.05,
+                thenDragTo: origin.withOffset(CGVector(dx: x, dy: y + viewport.height * 0.60)))
+            XCTAssertTrue(identified("reportDetailSheet", in: app).exists)
+        }
+        XCTAssertTrue(witnessedAdjacentDimensions,
+                      "Neighboring dimension content must coexist in one real scrolling flow, not replace each other.")
+        XCTAssertTrue(waitUntil { toneTab.isSelected }, "Real scrolling must update the selected tab from actual section geometry.")
+        capture("detail-scroll-selected-tone", app: app)
+        tapDetailTab("waterOil", app: app)
+        XCTAssertTrue(waitUntil {
+            waterHeading.exists && waterHeading.frame.minY >= tabs.frame.maxY - 2 &&
+                waterHeading.frame.minY <= tabs.frame.maxY + 12
+        }, "Returning by tab must restore the heading without retaining the previous offset or hiding it under tabs.")
+        capture("detail-tab-return-water-oil", app: app)
+    }
+
     func testReportCalibrationFeedbackEditorAndPDFShare() {
         let app = XCUIApplication()
         app.launch()
@@ -333,6 +381,17 @@ final class RuyuanUITests: XCTestCase {
                 let photo = identified("scanOriginalPhoto", in: app)
                 XCTAssertTrue(waitUntil { (photo.value as? String)?.contains("局部") == true },
                               "Brow and eye scenes must focus on this synthetic report's real ROI points.")
+            }
+            if index == 5 {
+                let photo = identified("scanOriginalPhoto", in: app)
+                for id in ["v2-leftEyebrow-arch-angle", "v2-leftEye-inner-angle"] {
+                    let label = identified("scanMeasurement-\(id)", in: app)
+                    XCTAssertTrue(label.exists, "The focused side must retain its actual angle label.")
+                    XCTAssertTrue(photo.frame.contains(label.frame), "A local angle label must not be cut off by the photo viewport.")
+                }
+                XCTAssertFalse(identified("scanMeasurement-v2-rightEyebrow-arch-angle", in: app).exists)
+                XCTAssertFalse(identified("scanMeasurement-v2-rightEye-inner-angle", in: app).exists,
+                               "The offscreen nonfocused side must not leak clipped labels into a single-eye closeup.")
             }
             if index == 9 {
                 let rangeNotice = identified("scanEyeSamplingRangeNotice", in: app)
