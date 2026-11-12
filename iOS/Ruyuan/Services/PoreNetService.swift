@@ -106,10 +106,10 @@ enum PoreNetService {
                 let metadata = model.modelDescription.metadata[MLModelMetadataKey.creatorDefinedKey] as? [String: String] ?? [:]
                 try validateMetadata(metadata)
                 guard let constraint = model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint,
-                      constraint.pixelsWide == inputWidth, constraint.pixelsHigh == inputHeight,
-                      constraint.pixelFormatType == kCVPixelFormatType_32BGRA,
-                      let output = model.modelDescription.outputDescriptionsByName["poreProbability"]?.multiArrayConstraint,
-                      output.dataType == .float32, output.shape.map(\.intValue) == [1, 1, inputHeight, inputWidth] else { throw Failure.invalidModel }
+                      let output = model.modelDescription.outputDescriptionsByName["poreProbability"]?.multiArrayConstraint else { throw Failure.invalidModel }
+                try validateConstraints(pixelsWide: constraint.pixelsWide, pixelsHigh: constraint.pixelsHigh,
+                                        pixelFormat: constraint.pixelFormatType, outputDataType: output.dataType,
+                                        declaredOutputShape: output.shape.map(\.intValue))
                 try Task.checkCancellation()
                 // The Core ML ImageType handles RGB 1/255; mean/std are already in the graph.
                 // This fixed model resize does NOT change the native-resolution eligibility.
@@ -131,6 +131,17 @@ enum PoreNetService {
         catch Failure.insufficientSkin { return unavailable(.insufficientSkin) }
         catch Failure.invalidInput { return unavailable(.invalidInput) }
         catch { if Task.isCancelled { throw CancellationError() }; return unavailable(.inferenceFailed) }
+    }
+
+    /// The approved .mlmodel (SHA 30a8f1e7...) serializes RGB1024x1280 + FLOAT32 output,
+    /// but its neuralNetwork protobuf omits the output shape. An empty static constraint is not
+    /// an empty prediction. Accept only that evidenced omission or the exact declared NCHW;
+    /// copyProbabilityMap still requires the actual runtime tensor to be exact NCHW.
+    static func validateConstraints(pixelsWide: Int, pixelsHigh: Int, pixelFormat: OSType,
+                                    outputDataType: MLMultiArrayDataType, declaredOutputShape: [Int]) throws {
+        guard pixelsWide == inputWidth, pixelsHigh == inputHeight,
+              pixelFormat == kCVPixelFormatType_32BGRA, outputDataType == .float32,
+              declaredOutputShape.isEmpty || declaredOutputShape == [1, 1, inputHeight, inputWidth] else { throw Failure.invalidModel }
     }
 
     /// Copy NCHW output by its actual strides, never transposing width/height or treating padding

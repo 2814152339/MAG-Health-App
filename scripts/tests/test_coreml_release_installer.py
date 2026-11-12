@@ -249,7 +249,7 @@ class ReleaseInstallerTests(unittest.TestCase):
                 installer.download_archive("/releases/assets/1", "not-a-real-token", path, 5)
             self.assertLessEqual(path.stat().st_size, 5)
 
-    def test_current_formal_lock_is_still_legacy_and_supported_without_modification(self):
+    def test_current_formal_lock_transport_matches_its_reviewed_pin(self):
         lock = json.loads(installer.LOCK.read_text(encoding="utf-8"))
         for pin in lock["models"]:
             kind, suffix = installer.archive_source(pin)

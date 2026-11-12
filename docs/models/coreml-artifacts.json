@@ -172,6 +172,18 @@
           "maxAbsoluteProbabilityError": 0.01,
           "allTop1Match": true
         }
+      },
+      "releaseAssetID": 737665562,
+      "releaseID": 442401296,
+      "releaseTag": "coreml-models-20261112-v1",
+      "source": {
+        "type": "githubRelease",
+        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "tag": "coreml-models-20261112-v1",
+        "releaseID": 442401296,
+        "assetID": 737665562,
+        "assetName": "Ruyuan-CoreML-acne.zip",
+        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737665562"
       }
     },
     {
@@ -312,6 +324,18 @@
           "maxAbsoluteProbabilityError": 0.01,
           "allTop1Match": true
         }
+      },
+      "releaseAssetID": 737666107,
+      "releaseID": 442401296,
+      "releaseTag": "coreml-models-20261112-v1",
+      "source": {
+        "type": "githubRelease",
+        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "tag": "coreml-models-20261112-v1",
+        "releaseID": 442401296,
+        "assetID": 737666107,
+        "assetName": "Ruyuan-CoreML-wrinkles.zip",
+        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737666107"
       }
     },
     {
@@ -463,7 +487,28 @@
           "maxAbsoluteProbabilityError": 0.01,
           "allTop1Match": true
         }
+      },
+      "releaseAssetID": 737666476,
+      "releaseID": 442401296,
+      "releaseTag": "coreml-models-20261112-v1",
+      "source": {
+        "type": "githubRelease",
+        "repository": "2814152339/ruyuan-aesthetics-ios",
+        "tag": "coreml-models-20261112-v1",
+        "releaseID": 442401296,
+        "assetID": 737666476,
+        "assetName": "Ruyuan-CoreML-skin_type.zip",
+        "apiURL": "https://api.github.com/repos/2814152339/ruyuan-aesthetics-ios/releases/assets/737666476"
       }
     }
-  ]
+  ],
+  "publication": {
+    "state": "private_release_assets_fully_verified",
+    "repository": "2814152339/ruyuan-aesthetics-ios",
+    "tag": "coreml-models-20261112-v1",
+    "releaseID": 442401296,
+    "sourceLockSHA256": "26cf4608620672c302da5ce8ea1c961b63b4e4ca03b0f4938e220194f2e55883",
+    "verifiedAt": "2026-11-12T01:56:53.925697+00:00",
+    "repositoryPrivateAtVerification": true
+  }
 }

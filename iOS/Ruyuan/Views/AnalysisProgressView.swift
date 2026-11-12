@@ -202,12 +202,14 @@ struct AnalysisProgressView: View {
             ZStack(alignment: .topLeading) {
                 FocusedReportPhotoView(report: report, image: store.analysisImage, layers: displayLayers(report),
                                        landmarks: paths, region: focus)
+                    .allowsHitTesting(false)
                 measurementGuides(report, transform: transform)
                 ForEach(measurements(report)) { item in
                     Text(item.text).font(.system(size: 9, weight: .medium)).multilineTextAlignment(.center)
                         .foregroundStyle(.white).shadow(color: .black.opacity(0.9), radius: 2)
                         .padding(3).background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 3))
                         .position(transform.position(item.anchor))
+                        .allowsHitTesting(false)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 5) {
@@ -230,7 +232,11 @@ struct AnalysisProgressView: View {
                     }
                 }.foregroundStyle(.white).padding(10).background(.black.opacity(0.20))
             }.animation(.easeInOut(duration: 0.5), value: sceneIndex)
-        }.clipped().accessibilityElement(children: .contain)
+        }
+        // A focused image is intentionally larger than its visible viewport.
+        // Clipping pixels alone does not clip SwiftUI's hit-test region; its
+        // offscreen image must not swallow the header's Skip / Back controls.
+        .contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
         .accessibilityLabel(report.isSample ? "合成示意与示例测量标注" : "本次照片与实际测量标注")
         .accessibilityValue(focus == nil ? "完整照片" : "已按本报告眉眼点位定位局部")
         .accessibilityIdentifier("scanOriginalPhoto")

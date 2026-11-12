@@ -1,5 +1,5 @@
 #!/bin/bash
-# No signing credentials, external dependencies, model downloads or real photos.
+# No signing credentials or private photos; pinned public models and SDKs are fetched in CI.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

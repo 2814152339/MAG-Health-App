@@ -186,8 +186,15 @@ final class RuyuanUITests: XCTestCase {
 
         let share = identified("shareReportPDF", in: app)
         XCTAssertTrue(reveal(share, in: app)); share.tap()
-        let sharePanel = identified("reportShareSheet", in: app)
-        XCTAssertTrue(sharePanel.waitForExistence(timeout: 8), "PDF export must actually open the system share controller.")
+        // UIActivityViewController is backed by a system remote container on
+        // iOS 18. Its view's custom identifier is not preserved in that tree.
+        // Assert the actual native sheet and its PDF metadata, not an app flag.
+        let sharePanel = app.navigationBars["UIActivityContentView"].firstMatch
+        XCTAssertTrue(sharePanel.waitForExistence(timeout: 8), "PDF export must actually open the native system share controller.")
+        let pdfMetadata = sharePanel.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "PDF")).firstMatch
+        XCTAssertTrue(pdfMetadata.exists, "The shared activity must identify a real PDF document.")
+        let reportFileName = sharePanel.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "ruyuan-demo-v1")).firstMatch
+        XCTAssertTrue(reportFileName.exists, "The exported file must belong to the actual sample report.")
         capture("share-pdf", app: app)
         let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).allElementsBoundByIndex.first { $0.isHittable }
         if let close { close.tap() } else { sharePanel.swipeDown() }

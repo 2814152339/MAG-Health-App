@@ -1,0 +1,29 @@
+{
+  "state": "private_release_assets_fully_verified",
+  "releaseID": 442401296,
+  "tag": "coreml-models-20261112-v1",
+  "sourceLockSHA256": "26cf4608620672c302da5ce8ea1c961b63b4e4ca03b0f4938e220194f2e55883",
+  "models": [
+    {
+      "id": "acne",
+      "releaseAssetID": 737665562,
+      "sha256": "551572974ab446bb8b75c08977aecee5a45a300eb40a5254da93311b05d3d7a8",
+      "bytes": 171760926,
+      "source": "hash_pinned_original_actions_zip"
+    },
+    {
+      "id": "wrinkles",
+      "releaseAssetID": 737666107,
+      "sha256": "eefb370269289c023b951bce1fc3c15167403eee0dad3ce277d9798848305c3d",
+      "bytes": 171755190,
+      "source": "hash_pinned_original_actions_zip"
+    },
+    {
+      "id": "skin_type",
+      "releaseAssetID": 737666476,
+      "sha256": "a8f5d7231fa319c2619ff02bc2be268171ed3a2a9642357a2aeeec92ee5110ef",
+      "bytes": 343344789,
+      "source": "hash_pinned_original_actions_zip"
+    }
+  ]
+}

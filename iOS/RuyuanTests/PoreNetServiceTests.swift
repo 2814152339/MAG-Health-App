@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreML
+import CoreVideo
 import Foundation
 import Vision
 import XCTest
@@ -92,6 +93,12 @@ final class PoreNetServiceTests: XCTestCase {
         let metadata = model.modelDescription.metadata[MLModelMetadataKey.creatorDefinedKey] as? [String: String] ?? [:]
         try PoreNetService.validateMetadata(metadata)
         let constraint = try XCTUnwrap(model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint)
+        let outputConstraint = try XCTUnwrap(model.modelDescription.outputDescriptionsByName["poreProbability"]?.multiArrayConstraint)
+        let staticShape = outputConstraint.shape.map(\.intValue)
+        let contractDiagnostic = "Actual SDK input=\(constraint.pixelsWide)x\(constraint.pixelsHigh), pixelFormat=\(constraint.pixelFormatType); output dtype=\(outputConstraint.dataType.rawValue), declaredShape=\(staticShape)"
+        XCTAssertNoThrow(try PoreNetService.validateConstraints(pixelsWide: constraint.pixelsWide, pixelsHigh: constraint.pixelsHigh,
+            pixelFormat: constraint.pixelFormatType, outputDataType: outputConstraint.dataType,
+            declaredOutputShape: staticShape), contractDiagnostic)
         // Exact sRGB uint8 pixels, matching the source Torch fixture. No second normalization.
         let feature = try MLFeatureValue(cgImage: image(), constraint: constraint,
                                         options: [.cropAndScale: VNImageCropAndScaleOption.scaleFill.rawValue])
@@ -147,6 +154,30 @@ final class PoreNetServiceTests: XCTestCase {
         array[0] = NSNumber(value: Float.nan)
         XCTAssertThrowsError(try PoreNetService.copyProbabilityMap(array, width: 3, height: 2))
         XCTAssertThrowsError(try PoreNetService.copyProbabilityMap(padded, width: 2, height: 3))
+    }
+
+    func testPinnedNeuralNetworkAllowsOmittedStaticShapeButRejectsInvalidDeclaredContract() throws {
+        for shape in [[], [1, 1, 1280, 1024]] {
+            XCTAssertNoThrow(try PoreNetService.validateConstraints(pixelsWide: 1024, pixelsHigh: 1280,
+                pixelFormat: kCVPixelFormatType_32BGRA, outputDataType: .float32, declaredOutputShape: shape))
+        }
+        for shape in [[1, 1280, 1024], [1, 1, 1024, 1280], [2, 1, 1280, 1024], [1, 3, 1280, 1024], [0], [1280, 1024]] {
+            XCTAssertThrowsError(try PoreNetService.validateConstraints(pixelsWide: 1024, pixelsHigh: 1280,
+                pixelFormat: kCVPixelFormatType_32BGRA, outputDataType: .float32, declaredOutputShape: shape))
+        }
+        for dataType in [MLMultiArrayDataType.double, .int32, .float16] {
+            XCTAssertThrowsError(try PoreNetService.validateConstraints(pixelsWide: 1024, pixelsHigh: 1280,
+                pixelFormat: kCVPixelFormatType_32BGRA, outputDataType: dataType, declaredOutputShape: []))
+        }
+        XCTAssertThrowsError(try PoreNetService.validateConstraints(pixelsWide: 1024, pixelsHigh: 1280,
+            pixelFormat: kCVPixelFormatType_32ARGB, outputDataType: .float32, declaredOutputShape: []))
+        XCTAssertThrowsError(try PoreNetService.validateConstraints(pixelsWide: 1280, pixelsHigh: 1024,
+            pixelFormat: kCVPixelFormatType_32BGRA, outputDataType: .float32, declaredOutputShape: []))
+        // Static omission must never relax actual output dimensions or float32 enforcement.
+        let wrongRuntimeShape = try MLMultiArray(shape: [1, 2, 3], dataType: .float32)
+        XCTAssertThrowsError(try PoreNetService.copyProbabilityMap(wrongRuntimeShape, width: 3, height: 2))
+        let wrongRuntimeType = try MLMultiArray(shape: [1, 1, 2, 3], dataType: .double)
+        XCTAssertThrowsError(try PoreNetService.copyProbabilityMap(wrongRuntimeType, width: 3, height: 2))
     }
 
     func testWholeImageMappingCoverageAndEightNeighborComponents() throws {
