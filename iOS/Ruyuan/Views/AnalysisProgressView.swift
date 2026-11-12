@@ -63,21 +63,30 @@ struct AnalysisProgressView: View {
     @State private var showsSemanticMask = false
     @State private var showsMaskViewer = false
     private var scene: ScanScene { ScanScene.allCases[min(sceneIndex, ScanScene.allCases.count - 1)] }
+    private var staticInspection: Bool { paused && manuallyInspectedScene }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if let report = store.scanReport {
+                let activeLayers = displayLayers(report)
+                let activePaths = sceneLandmarks(report)
+                let activeMeasurements = measurements(report)
+                let sampling = activeLayers.first(where: { $0.id == "appearance-under-eye" }).map {
+                    OverlayPresentationGeometry.eyeSamplingRegions(for: $0, landmarks: report.landmarks,
+                        imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
+                } ?? []
                 GeometryReader { proxy in
-                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused || showsMaskViewer)) { context in
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused || showsMaskViewer || reduceMotion)) { context in
                         let elapsed = clock.elapsed(at: context.date)
                         let phases = motionPhases(elapsed: elapsed)
                         let focus = cameraRegion(report, elapsed: elapsed)
                         let focusAmount = cameraFocus(elapsed: elapsed)
                         let photoHeight = proxy.size.height * (0.77 + 0.23 * focusAmount)
-                        let exit = reduceMotion ? 1 : 1 - ScanMotionTimeline.smoothstep((elapsed - scene.duration + 0.32) / 0.25)
+                        let exit = (reduceMotion || staticInspection) ? 1 : 1 - ScanMotionTimeline.smoothstep((elapsed - scene.duration + 0.32) / 0.25)
                         ZStack(alignment: .bottom) {
-                            scanPhoto(report, focus: focus, elapsed: elapsed, phases: phases, exit: exit)
+                            scanPhoto(report, focus: focus, elapsed: elapsed, phases: phases, exit: exit,
+                                      layers: activeLayers, paths: activePaths, values: activeMeasurements, sampling: sampling)
                                 .frame(height: photoHeight)
                                 .frame(maxHeight: .infinity, alignment: .top)
                             resultPanel(report)
@@ -168,7 +177,7 @@ struct AnalysisProgressView: View {
     }
 
     private func motionPhases(elapsed: Double) -> ScanMotionTimeline.Phases {
-        if reduceMotion { return .complete }
+        if reduceMotion || staticInspection { return .complete }
         if scene == .face {
             func phase(_ start: Double, _ end: Double) -> Double {
                 ScanMotionTimeline.smoothstep((elapsed - start) / (end - start))
@@ -182,13 +191,13 @@ struct AnalysisProgressView: View {
     }
 
     private func angleProgress(elapsed: Double, phases: ScanMotionTimeline.Phases) -> Double {
-        if reduceMotion { return 1 }
+        if reduceMotion || staticInspection { return 1 }
         if scene == .face { return ScanMotionTimeline.smoothstep((elapsed - 0.55) / 1.05) }
         return phases.measurements
     }
 
     private func cameraProgress(elapsed: Double) -> Double {
-        reduceMotion ? 1 : ScanMotionTimeline.smoothstep(elapsed / 0.85)
+        (reduceMotion || staticInspection) ? 1 : ScanMotionTimeline.smoothstep(elapsed / 0.85)
     }
 
     private func cameraRegion(_ report: AnalysisReport, elapsed: Double) -> CGRect {
@@ -219,7 +228,6 @@ struct AnalysisProgressView: View {
         if paused {
             // Explicit stepping while paused is a static inspection of the
             // next result, not an animation silently running behind Pause.
-            clock.reset(at: now.addingTimeInterval(-max(4.5, scene.duration - 0.5)))
             clock.pause(at: now)
         }
     }
@@ -237,12 +245,14 @@ struct AnalysisProgressView: View {
                         .background(.black.opacity(0.45), in: Capsule()).padding(18)
                 }.foregroundStyle(.white)
                 scanTopBar.frame(maxHeight: .infinity, alignment: .top)
-                TimelineView(.animation) { time in
-                    let fraction = time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3
-                    Rectangle().fill(LinearGradient(colors: [.clear, Color(hex: "7775FF").opacity(0.75), .clear],
-                                                    startPoint: .top, endPoint: .bottom))
-                        .frame(height: 24).position(x: proxy.size.width / 2, y: proxy.size.height * fraction)
-                }.allowsHitTesting(false)
+                if !reduceMotion {
+                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { time in
+                        let fraction = time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3
+                        Rectangle().fill(LinearGradient(colors: [.clear, Color(hex: "7775FF").opacity(0.75), .clear],
+                                                        startPoint: .top, endPoint: .bottom))
+                            .frame(height: 24).position(x: proxy.size.width / 2, y: proxy.size.height * fraction)
+                    }.allowsHitTesting(false).accessibilityHidden(true)
+                }
             }
         }.frame(maxHeight: .infinity)
     }
@@ -298,12 +308,8 @@ struct AnalysisProgressView: View {
     }
 
     private func scanPhoto(_ report: AnalysisReport, focus: CGRect, elapsed: Double,
-                           phases: ScanMotionTimeline.Phases, exit: Double) -> some View {
-        let paths = sceneLandmarks(report)
-        let sampling = displayLayers(report).first(where: { $0.id == "appearance-under-eye" }).map {
-            OverlayPresentationGeometry.eyeSamplingRegions(for: $0, landmarks: report.landmarks,
-                imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
-        } ?? []
+                           phases: ScanMotionTimeline.Phases, exit: Double, layers: [OverlayLayer],
+                           paths: [LandmarkPath], values: [ScanMeasurement], sampling: [CGRect]) -> some View {
         return GeometryReader { proxy in
             let transform = ReportPhotoTransform(
                 imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
@@ -312,12 +318,13 @@ struct AnalysisProgressView: View {
                 FocusedReportPhotoView(report: report, image: store.analysisImage, region: focus)
                     .allowsHitTesting(false)
                 ZStack(alignment: .topLeading) {
-                    ScanGeometryDrawing(layers: displayLayers(report), landmarks: paths, transform: transform,
+                    ScanGeometryDrawing(layers: layers, landmarks: paths, transform: transform,
                                         phases: phases, elapsed: elapsed, reduceMotion: reduceMotion,
-                                        angleProgress: angleProgress(elapsed: elapsed, phases: phases), samplingRegions: sampling)
+                                        angleProgress: angleProgress(elapsed: elapsed, phases: phases), samplingRegions: sampling,
+                                        showsFeatureGuides: scene == .brow, showsChinGuides: scene == .triangle)
                     measurementGuides(report, transform: transform, progress: phases.referenceLines,
                                       measurementProgress: phases.measurements)
-                    ForEach(measurements(report)) { item in
+                    ForEach(values) { item in
                         let progress = item.unit == "°" ? angleProgress(elapsed: elapsed, phases: phases) : phases.measurements
                         let labelOpacity = scene == .face && item.unit == "°" ? progress : phases.labels
                         Text(item.displayedText(progress: progress))
@@ -381,24 +388,14 @@ struct AnalysisProgressView: View {
                   let top = contour.points.map(\.y).min(), let bottom = contour.points.map(\.y).max() else { return }
             func line(_ a: NormalizedPoint, _ b: NormalizedPoint, arrows: Bool = false) {
                 let start = transform.position(a), end = transform.position(b)
-                let amount = arrows ? measurementProgress : progress
-                let points: [CGPoint]
-                if arrows, let segment = ScanMotionTimeline.centerOutLine(from: start, to: end, progress: amount) {
-                    points = [segment.start, segment.end]
-                } else { points = ScanMotionTimeline.polylinePrefix([start, end], progress: amount) }
-                var path = Path(); if let first = points.first { path.move(to: first) }; for p in points.dropFirst() { path.addLine(to: p) }
-                context.stroke(path, with: .color(arrows ? Color(hex: "8C86FF") : .white.opacity(0.8)),
-                               style: StrokeStyle(lineWidth: arrows ? 1.1 : 0.7, dash: arrows ? [] : [2, 3]))
-                if arrows, amount > 0, let movingStart = points.first, let movingEnd = points.last {
-                    let angle = atan2(movingEnd.y - movingStart.y, movingEnd.x - movingStart.x)
-                    for (point, direction) in [(movingStart, angle), (movingEnd, angle + .pi)] {
-                        var head = Path()
-                        head.move(to: CGPoint(x: point.x + cos(direction - 0.5) * 6, y: point.y + sin(direction - 0.5) * 6))
-                        head.addLine(to: point)
-                        head.addLine(to: CGPoint(x: point.x + cos(direction + 0.5) * 6, y: point.y + sin(direction + 0.5) * 6))
-                        context.stroke(head, with: .color(Color(hex: "8C86FF")), lineWidth: 1)
-                    }
+                if arrows {
+                    ScanDimensionDrawing.draw(from: start, to: end, progress: measurementProgress, context: &context)
+                    return
                 }
+                let points = ScanMotionTimeline.polylinePrefix([start, end], progress: progress)
+                var path = Path(); if let first = points.first { path.move(to: first) }; for p in points.dropFirst() { path.addLine(to: p) }
+                context.stroke(path, with: .color(.white.opacity(0.8)),
+                               style: StrokeStyle(lineWidth: 0.7, dash: [2, 3]))
             }
             if scene == .face {
                 let corners: [NormalizedPoint] = [.init(x: left, y: top), .init(x: right, y: top),
@@ -535,7 +532,7 @@ struct AnalysisProgressView: View {
         }
         return VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(scene.title).font(.system(size: 15, weight: .semibold))
+                Text(scene.title).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.72))
                     .accessibilityIdentifier("scanSceneTitle")
                 Spacer(minLength: 8)
                 Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 10).monospacedDigit()).foregroundStyle(.white.opacity(0.55))
@@ -548,8 +545,9 @@ struct AnalysisProgressView: View {
                     HStack(alignment: .top, spacing: 16) {
                         ForEach(Array(matchingMetrics.prefix(scene == .thirds ? 3 : 2))) { metric in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(panelMetricTitle(metric)).font(.system(size: 11)).lineLimit(1)
-                                Text(metric.formattedValue).font(.system(size: 14, weight: .medium)).monospacedDigit()
+                                Text(panelMetricTitle(metric)).font(.system(size: 13, weight: .semibold))
+                                    .lineLimit(2).minimumScaleFactor(0.8)
+                                Text(metric.formattedValue).font(.system(size: 18, weight: .medium)).monospacedDigit()
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }

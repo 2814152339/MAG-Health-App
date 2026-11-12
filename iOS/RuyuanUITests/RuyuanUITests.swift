@@ -465,7 +465,7 @@ final class RuyuanUITests: XCTestCase {
         capture("share-dismissed", app: app)
     }
 
-    func testSyntheticScannerScenesPlaybackAndSkip() {
+    func testSyntheticScannerScenesPlaybackAndSkip() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-scan"]
         app.launch()
@@ -484,6 +484,24 @@ final class RuyuanUITests: XCTestCase {
         let sceneTitle = identified("scanSceneTitle", in: app)
         let titles = ["定位面部关键点", "脸型与下颌轮廓", "面部纵向比例", "五眼与眼间距", "面部三角与下巴",
                       "眉眼精细分析", "鼻唇比例", "面部纹路与肌理", "肤色与点状外观", "眼周外观"]
+        // A paused return to the three-second first scene must not seek beyond
+        // its exit window and hide the actual panel while AX still says complete.
+        next.tap()
+        XCTAssertTrue(waitUntil { sceneTitle.label.contains(titles[1]) })
+        previous.tap()
+        XCTAssertTrue(waitUntil { sceneTitle.label.contains(titles[0]) })
+        let panel = identified("scanMeasurementPanel", in: app)
+        let scanner = identified("analysisScanner", in: app)
+        XCTAssertTrue(waitUntil {
+            let frame = panel.frame
+            return frame.width > 100 && frame.height > 40
+                && frame.minX >= scanner.frame.minX && frame.maxX <= scanner.frame.maxX
+                && frame.minY >= scanner.frame.minY && frame.maxY <= pause.frame.minY
+        }, "Returning to the first scene must leave its real result panel onscreen above playback.")
+        let panelPixels = try captureMotionPixels(app.screenshot(), name: "scanner-first-scene-paused-return-panel",
+                                                 region: panel.frame.insetBy(dx: 12, dy: 12), appFrame: app.frame)
+        XCTAssertGreaterThan(darkMotionPixelFraction(panelPixels), 0.25,
+                             "The returned first-scene panel must actually paint its dark backing, not only exist in AX.")
         for (index, title) in titles.enumerated() {
             XCTAssertTrue(waitUntil { sceneTitle.label.contains(title) }, "Missing scanner scene: \(title)")
             XCTAssertTrue(identified("scanMeasurementPanel", in: app).exists)
@@ -602,6 +620,53 @@ final class RuyuanUITests: XCTestCase {
         add(evidence)
     }
 
+    func testSyntheticProductionAngleRendererUsesProgressAndRestoresZeroPixels() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-angle-renderer"]
+        app.launch()
+        let canvas = identified("angleRendererCanvas", in: app)
+        XCTAssertTrue(canvas.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitUntil { canvas.value as? String == "0.0" })
+        let frame = canvas.frame
+        XCTAssertGreaterThan(frame.width, 200)
+        XCTAssertEqual(frame.width, frame.height, accuracy: 1)
+        for id in ["angleRendererZero", "angleRendererHalf", "angleRendererFull"] {
+            XCTAssertFalse(frame.intersects(app.buttons[id].frame), "Controls must remain outside the sampled Canvas.")
+        }
+        let zero = try captureMotionPixels(app.screenshot(), name: "angle-renderer-zero",
+                                          region: frame, appFrame: app.frame)
+        app.buttons["angleRendererHalf"].tap()
+        XCTAssertTrue(waitUntil { canvas.value as? String == "0.5" })
+        XCTAssertEqual(canvas.frame, frame)
+        let half = try captureMotionPixels(app.screenshot(), name: "angle-renderer-half",
+                                          region: frame, appFrame: app.frame)
+        XCTAssertGreaterThan(brightMotionPixelCount(half) - brightMotionPixelCount(zero), Int(Double(half.width) * 0.3),
+                             "Half progress must add actual white angle arms; the three static violet points are insufficient.")
+
+        app.buttons["angleRendererFull"].tap()
+        XCTAssertTrue(waitUntil { canvas.value as? String == "1.0" })
+        XCTAssertEqual(canvas.frame, frame)
+        let full = try captureMotionPixels(app.screenshot(), name: "angle-renderer-full",
+                                          region: frame, appFrame: app.frame)
+        // The first arm stays horizontal to image-left. The second must rotate
+        // from an upper-left diagonal at half to the x=.55 vertical at full.
+        // Column counts are deliberately independent of CG bitmap row direction.
+        XCTAssertGreaterThan(brightMotionPixelCount(half, columns: 0.26...0.48)
+                             - brightMotionPixelCount(full, columns: 0.26...0.48), Int(Double(full.width) * 0.08),
+                             "The half-angle diagonal must occupy real pixels left of the final vertical ray.")
+        XCTAssertGreaterThan(brightMotionPixelCount(full, columns: 0.525...0.575)
+                             - brightMotionPixelCount(half, columns: 0.525...0.575), Int(Double(full.height) * 0.2),
+                             "The full-angle second ray must really reach its vertical direction, not only change a label.")
+        XCTAssertGreaterThan(changedMotionPixelFraction(half, full), 0.0005)
+
+        app.buttons["angleRendererZero"].tap()
+        XCTAssertTrue(waitUntil { canvas.value as? String == "0.0" })
+        XCTAssertEqual(canvas.frame, frame)
+        let restored = try captureMotionPixels(app.screenshot(), name: "angle-renderer-restored-zero",
+                                              region: frame, appFrame: app.frame)
+        XCTAssertEqual(restored.rgba, zero.rgba, "Resetting real renderer progress must restore identical Canvas pixels.")
+    }
+
     private struct MotionPixelSample {
         let width: Int
         let height: Int
@@ -648,6 +713,28 @@ final class RuyuanUITests: XCTestCase {
             if difference > 24 { changed += 1 }
         }
         return Double(changed) / Double(first.width * first.height)
+    }
+
+    private func brightMotionPixelCount(_ sample: MotionPixelSample, columns: ClosedRange<Double> = 0...1) -> Int {
+        let start = max(0, min(sample.width, Int(Double(sample.width) * columns.lowerBound)))
+        let end = max(start, min(sample.width, Int(ceil(Double(sample.width) * columns.upperBound))))
+        var count = 0
+        for y in 0..<sample.height {
+            for x in start..<end {
+                let offset = (y * sample.width + x) * 4
+                if sample.rgba[offset] >= 200 && sample.rgba[offset + 1] >= 200 && sample.rgba[offset + 2] >= 200 { count += 1 }
+            }
+        }
+        return count
+    }
+
+    private func darkMotionPixelFraction(_ sample: MotionPixelSample) -> Double {
+        guard sample.width > 0, sample.height > 0 else { return 0 }
+        var count = 0
+        for offset in stride(from: 0, to: sample.rgba.count, by: 4) {
+            if sample.rgba[offset] < 45 && sample.rgba[offset + 1] < 45 && sample.rgba[offset + 2] < 45 { count += 1 }
+        }
+        return Double(count) / Double(sample.width * sample.height)
     }
 
     private func openSample(in app: XCUIApplication) {

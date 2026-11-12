@@ -11,13 +11,22 @@ struct ScanGeometryDrawing: View {
     let reduceMotion: Bool
     let angleProgress: Double
     var samplingRegions: [CGRect] = []
+    var showsFeatureGuides: Bool = false
+    var showsChinGuides: Bool = false
 
     private let violet = Color(hex: "7377FF")
 
     var body: some View {
         Canvas { context, _ in
+            let featureGuides = showsFeatureGuides ? ScanFeatureGuideGeometry.guides(landmarks: landmarks, transform: transform) : nil
+            let chinPoints = layers.first(where: { $0.id == "geometry-chin-points" })?.paths.first ?? []
+            let chinGuides = showsChinGuides ? ScanFeatureGuideGeometry.chinGuides(points: chinPoints, transform: transform) : nil
+            drawGuides(references: (featureGuides?.referenceSegments ?? []) + (chinGuides?.referenceSegments ?? []),
+                       dimensions: (featureGuides?.dimensionSegments ?? []) + (chinGuides?.dimensionSegments ?? []),
+                       context: &context)
             drawLandmarks(context: &context)
             for (index, layer) in layers.enumerated() {
+                if layer.id == "geometry-chin", chinGuides != nil { continue }
                 let stagger = min(0.22, Double(index) * 0.035)
                 let progress = reducedProgress(phases.measurements, delay: stagger)
                 if layer.id.hasPrefix("geometry-") {
@@ -101,23 +110,23 @@ struct ScanGeometryDrawing: View {
                      with: .color(.white.opacity(progress * 0.8)))
     }
 
-    private func drawDimension(_ points: [CGPoint], progress: Double, context: inout GraphicsContext) {
-        guard points.count == 2,
-              let segment = ScanMotionTimeline.centerOutLine(from: points[0], to: points[1], progress: progress),
-              progress > 0 else { return }
-        let line = path([segment.start, segment.end])
-        var glow = context
-        glow.addFilter(.blur(radius: 2))
-        glow.stroke(line, with: .color(violet.opacity(0.32)), lineWidth: 3)
-        context.stroke(line, with: .color(violet), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-        let angle = atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x)
-        let headSize = min(CGFloat(6), hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y) / 5)
-        for (point, direction) in [(segment.start, angle), (segment.end, angle + .pi)] {
-            let triangle = [point,
-                CGPoint(x: point.x + cos(direction - 0.48) * headSize, y: point.y + sin(direction - 0.48) * headSize),
-                CGPoint(x: point.x + cos(direction + 0.48) * headSize, y: point.y + sin(direction + 0.48) * headSize)]
-            context.fill(path(triangle, closed: true), with: .color(violet.opacity(min(1, progress * 2))))
+    private func drawGuides(references: [ScanFeatureGuideGeometry.Segment],
+                            dimensions: [ScanFeatureGuideGeometry.Segment], context: inout GraphicsContext) {
+        for (index, segment) in references.enumerated() {
+            let progress = reducedProgress(phases.referenceLines, delay: min(0.18, Double(index) * 0.025))
+            let points = ScanMotionTimeline.polylinePrefix([segment.start, segment.end], progress: progress)
+            context.stroke(path(points), with: .color(.white.opacity(0.8)),
+                           style: StrokeStyle(lineWidth: 0.7, dash: [2, 3]))
         }
+        for (index, segment) in dimensions.enumerated() {
+            ScanDimensionDrawing.draw(from: segment.start, to: segment.end,
+                progress: reducedProgress(phases.measurements, delay: min(0.18, Double(index) * 0.04)), context: &context)
+        }
+    }
+
+    private func drawDimension(_ points: [CGPoint], progress: Double, context: inout GraphicsContext) {
+        guard points.count == 2 else { return }
+        ScanDimensionDrawing.draw(from: points[0], to: points[1], progress: progress, context: &context)
     }
 
     private func drawAngles(context: inout GraphicsContext) {
@@ -174,6 +183,30 @@ struct ScanGeometryDrawing: View {
                 drawing.stroke(path(traced), with: .color(color),
                                style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
             }
+        }
+    }
+}
+
+/// All scan dimensions share one center-out stroke and filled endpoint style.
+/// Endpoints come from observed paths; this renderer does not produce values.
+enum ScanDimensionDrawing {
+    static func draw(from start: CGPoint, to end: CGPoint, progress: Double, context: inout GraphicsContext) {
+        guard progress > 0,
+              let segment = ScanMotionTimeline.centerOutLine(from: start, to: end, progress: progress) else { return }
+        let violet = Color(hex: "7377FF")
+        var line = Path(); line.move(to: segment.start); line.addLine(to: segment.end)
+        var glow = context
+        glow.addFilter(.blur(radius: 2))
+        glow.stroke(line, with: .color(violet.opacity(0.32)), lineWidth: 3)
+        context.stroke(line, with: .color(violet), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+        let angle = atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x)
+        let headSize = min(CGFloat(6), hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y) / 5)
+        for (point, direction) in [(segment.start, angle), (segment.end, angle + .pi)] {
+            var triangle = Path(); triangle.move(to: point)
+            triangle.addLine(to: CGPoint(x: point.x + cos(direction - 0.48) * headSize, y: point.y + sin(direction - 0.48) * headSize))
+            triangle.addLine(to: CGPoint(x: point.x + cos(direction + 0.48) * headSize, y: point.y + sin(direction + 0.48) * headSize))
+            triangle.closeSubpath()
+            context.fill(triangle, with: .color(violet.opacity(min(1, progress * 2))))
         }
     }
 }

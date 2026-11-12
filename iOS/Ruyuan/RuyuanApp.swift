@@ -13,6 +13,8 @@ struct RuyuanApp: App {
                     CameraReviewUITestHarness()
                 } else if ProcessInfo.processInfo.arguments.contains("--ui-test-viewer-framing") {
                     ViewerFramingUITestHarness().environmentObject(store)
+                } else if ProcessInfo.processInfo.arguments.contains("--ui-test-angle-renderer") {
+                    AngleRendererUITestHarness()
                 } else {
                     RootView().environmentObject(store)
                 }
@@ -92,6 +94,48 @@ private struct ViewerFramingUITestHarness: View {
                 initialItemReference: target == .layer ?
                     OverlayItemPresentation.reference(in: report, dimension: .tone, itemID: "sample-tone") : nil)
         }
+    }
+}
+
+/// Isolates the production angle renderer on three explicitly synthetic points.
+/// No photo, report, analysis, model, playback clock, or persistence is involved.
+@MainActor
+private struct AngleRendererUITestHarness: View {
+    @State private var progress: Double = 0
+    private let layer = OverlayLayer(id: "geometry-jaw-right-points", title: "合成角度渲染夹具",
+        colorHex: "7377FF", kind: .points, paths: [[
+            .init(x: 0.18, y: 0.68), .init(x: 0.55, y: 0.68), .init(x: 0.55, y: 0.22)
+        ]], note: "手工三点，仅验证绘图；不是真人测量。", source: "DEBUG synthetic renderer fixture")
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("合成三点角臂渲染测试 · 非检测结果")
+                .font(.caption).foregroundStyle(.white)
+            GeometryReader { proxy in
+                ZStack {
+                    Color.black
+                    ScanGeometryDrawing(layers: [layer], landmarks: [],
+                        transform: ReportPhotoTransform(imageSize: CGSize(width: 1000, height: 1000),
+                                                        viewport: proxy.size),
+                        phases: .complete, elapsed: 0, reduceMotion: false, angleProgress: progress)
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("合成三点角臂画布")
+            .accessibilityValue(String(progress))
+            .accessibilityIdentifier("angleRendererCanvas")
+            HStack(spacing: 16) {
+                Button("0") { progress = 0 }.accessibilityIdentifier("angleRendererZero")
+                Button("0.5") { progress = 0.5 }.accessibilityIdentifier("angleRendererHalf")
+                Button("1") { progress = 1 }.accessibilityIdentifier("angleRendererFull")
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(minHeight: 44)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black)
     }
 }
 #endif
