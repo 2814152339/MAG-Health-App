@@ -197,6 +197,7 @@ struct OverlayView: View {
     @State private var savedOffset: CGSize = .zero
     @State private var focusRegion: CGRect?
     @State private var showsLegend = true
+    @State private var measuredLegendHeight: CGFloat = 0
     @State private var showsViewingTools = false
     @State private var currentViewport: CGSize = .zero
 
@@ -205,8 +206,8 @@ struct OverlayView: View {
         return matches.count == 1 ? matches.first : nil
     }
 
-    // Keep hidden legend layout stable when comparing the original image. The
-    // actual observation is never exposed in the original-mode accessibility tree.
+    // Resolve the annotated legend only. Original mode constructs no observation
+    // subtree and reserves only its previously measured presentation height.
     private var legendObservation: SkinItem? {
         OverlayItemPresentation.resolvedItem(selectedItemReference, in: report,
             selectedLayerID: selectedLayerID, showOverlay: true)
@@ -329,16 +330,29 @@ struct OverlayView: View {
     private func controls(maximumToolsHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let layer = selectedLayer, showsLegend {
-                legend(layer: layer)
-                    .opacity(showOverlay ? 1 : 0)
-                    .accessibilityHidden(!showOverlay)
-                    .overlay {
-                        if !showOverlay {
+                if showOverlay {
+                    legend(layer: layer)
+                        .background {
+                            GeometryReader { bounds in
+                                Color.clear.onChange(of: bounds.size.height, initial: true) { _, height in
+                                    guard height.isFinite, height > 0,
+                                          abs(height - measuredLegendHeight) > 0.01 else { return }
+                                    measuredLegendHeight = height
+                                }
+                            }
+                        }
+                } else {
+                    // Opacity/accessibilityHidden can leave descendant values
+                    // in the system AX tree. Do not build that subtree at all.
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: measuredLegendHeight)
+                        .overlay {
                             Text("原图对照 · 已隐藏分析标注")
                                 .font(.caption).foregroundStyle(.white.opacity(0.7))
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                    }
+                }
             }
             Picker("显示模式", selection: $showOverlay) {
                 Text("原图").tag(false)
