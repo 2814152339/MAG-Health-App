@@ -15,6 +15,8 @@ class Settings:
     max_pixels: int = 24_000_000
     min_side: int = 256
     workers: int = 1
+    skin_models_dir: Path | None = None
+    skin_models_required: bool = False
 
     def __post_init__(self) -> None:
         if len(self.api_token) < 32 or self.api_token.strip() != self.api_token:
@@ -36,4 +38,6 @@ class Settings:
             data_dir=Path(os.getenv("RUYUAN_DATA_DIR", "./private-data")).resolve(),
             face_model=Path(model).expanduser().resolve() if model else None,
             workers=int(os.getenv("RUYUAN_WORKERS", "1")),
+            skin_models_dir=Path(os.environ["RUYUAN_SKIN_MODELS_DIR"]).expanduser().resolve() if os.getenv("RUYUAN_SKIN_MODELS_DIR", "").strip() else None,
+            skin_models_required=os.getenv("RUYUAN_SKIN_MODELS_REQUIRED", "0").lower() in {"1", "true", "yes"},
         )

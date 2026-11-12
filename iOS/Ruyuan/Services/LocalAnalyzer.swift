@@ -86,7 +86,7 @@ struct LocalAnalyzer {
         guard let features = face.landmarks else {
             throw AnalysisError.poorQuality("五官定位不足，请露出眉眼、鼻部和嘴唇，避免遮挡。")
         }
-        let landmarkPaths = makeLandmarks(features, box: box)
+        var landmarkPaths = makeLandmarks(features, box: box)
         let lookup = Dictionary(uniqueKeysWithValues: landmarkPaths.map { ($0.id, $0.points) })
         guard (lookup["leftEye"]?.count ?? 0) >= 4,
               (lookup["rightEye"]?.count ?? 0) >= 4,
@@ -94,7 +94,7 @@ struct LocalAnalyzer {
               (lookup["faceContour"]?.count ?? 0) >= 8 else {
             throw AnalysisError.poorQuality("关键五官未完整定位，请移开遮挡、关闭美颜后重拍。")
         }
-        let geometry = geometryMetrics(lookup, width: width, height: height) + FaceGeometryAnalyzer.metrics(landmarks: lookup, width: width, height: height)
+        var geometry = geometryMetrics(lookup, width: width, height: height) + FaceGeometryAnalyzer.metrics(landmarks: lookup, width: width, height: height)
         try Task.checkCancellation()
 
         progress(.skin)
@@ -132,7 +132,28 @@ struct LocalAnalyzer {
             },
             note: "由真实二维特征点形成；轮廓不包含发际线。坐标为原图左上角归一化坐标。", source: featureSource
         )]
-        let detailed = AppearanceAnalyzer.analyze(raster: raster, landmarks: lookup, faceBox: box)
+        var segmentation: FaceSegmentationService.Mask?
+        var segmentationNote = ""
+        do {
+            segmentation = try FaceSegmentationService.segment(raster: raster)
+            quality.append(QualityCheck(id: "semanticSegmentation", title: "本机语义分割", passed: true,
+                detail: FaceSegmentationService.source + "；真实输出背景/毛发/身体皮肤/面部皮肤/衣物/配饰六类。皮肤病变检测仍为照片外观公式，不冒充专项模型。"))
+        } catch {
+            try Task.checkCancellation()
+            segmentationNote = (error as? FaceSegmentationService.Failure)?.localizedDescription ?? "本机语义分割运行失败；本次使用明确标注的几何ROI降级分析，未生成模型皮肤或毛发掩膜。"
+            quality.append(QualityCheck(id: "semanticSegmentation", title: "本机语义分割未完成", passed: false, detail: segmentationNote))
+        }
+        try Task.checkCancellation()
+        if let segmentation {
+            overlays += segmentation.overlays(landmarks: lookup, faceBox: box)
+            let boundary = segmentation.boundaryGeometry(landmarks: lookup, faceBox: box)
+            geometry += boundary.metrics
+            if let overlay = boundary.overlay { overlays.append(overlay) }
+            if let path = boundary.path { landmarkPaths.append(path) }
+            quality.append(QualityCheck(id: "visibleHairBoundary", title: "可见发肤边界", passed: boundary.path != nil,
+                detail: boundary.path != nil ? "模型检出多列一致的毛发→额部皮肤边界；仅作可见三段比例，刘海可能遮住真实发际线，可手动复核。" : "没有足够稳定的毛发→额部皮肤边界；未猜测发际线或三庭，仍可手动标定。"))
+        }
+        let detailed = AppearanceAnalyzer.analyze(raster: raster, landmarks: lookup, faceBox: box, segmentation: segmentation)
         overlays += detailed.overlays
         overlays += FaceGeometryAnalyzer.overlays(landmarks: lookup, width: width, height: height)
 
@@ -145,8 +166,8 @@ struct LocalAnalyzer {
             imageFileName: imageFileName, imageWidth: width, imageHeight: height,
             geometry: geometry, skin: detailed.metrics, landmarks: landmarkPaths,
             overlays: overlays, quality: quality,
-            modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2",
-            summary: detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
+            modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2; " + (segmentation != nil ? FaceSegmentationService.source : "semantic segmentation unavailable; geometric ROI fallback"),
+            summary: segmentationNote + detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
         )
     }
 

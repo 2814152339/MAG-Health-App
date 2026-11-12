@@ -64,6 +64,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
   echo 'This script requires macOS and a complete Xcode installation.' | tee "$OUT/setup.log"
   exit 1
 fi
+run_logged verify-segmentation-model python3 scripts/setup_segmentation_model.py --check
 run_logged environment bash -c 'set -e; sw_vers; xcode-select -p; xcodebuild -version; xcrun --sdk iphoneos --show-sdk-version'
 
 BUILD_STATUS=failed

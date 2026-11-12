@@ -48,4 +48,31 @@ enum SampleData {
             modelVersion: "sample-design-v1", summary: "这是一份交互演示报告。五维评分、标注和图层用于体验页面，不是你的测肤结果。拍摄或导入照片后，可查看独立生成的真实分析。"
         )
     }()
+
+    #if DEBUG
+    /// Manually authored points on our vector illustration, not Vision output.
+    static var scannerReport: AnalysisReport {
+        func p(_ x: Double, _ y: Double) -> NormalizedPoint { .init(x: x, y: y) }
+        let paths: [LandmarkPath] = [
+            .init(id: "faceContour", points: [p(0.25,0.32),p(0.22,0.42),p(0.24,0.55),p(0.30,0.66),p(0.40,0.74),p(0.50,0.78),p(0.60,0.74),p(0.70,0.66),p(0.76,0.55),p(0.78,0.42),p(0.75,0.32)], closed: false),
+            .init(id: "leftEye", points: [p(0.30,0.40),p(0.35,0.42),p(0.40,0.42),p(0.43,0.40),p(0.39,0.44),p(0.34,0.44)], closed: true),
+            .init(id: "rightEye", points: [p(0.57,0.40),p(0.61,0.42),p(0.66,0.42),p(0.70,0.40),p(0.66,0.44),p(0.61,0.44)], closed: true),
+            .init(id: "leftEyebrow", points: [p(0.29,0.36),p(0.34,0.34),p(0.39,0.34),p(0.44,0.36)], closed: false),
+            .init(id: "rightEyebrow", points: [p(0.56,0.36),p(0.61,0.34),p(0.66,0.34),p(0.71,0.36)], closed: false),
+            .init(id: "nose", points: [p(0.49,0.43),p(0.46,0.52),p(0.47,0.55),p(0.53,0.55),p(0.54,0.52),p(0.51,0.43)], closed: true),
+            .init(id: "noseCrest", points: [p(0.50,0.42),p(0.50,0.50),p(0.50,0.55)], closed: false),
+            .init(id: "outerLips", points: [p(0.39,0.61),p(0.45,0.60),p(0.50,0.61),p(0.55,0.60),p(0.61,0.61),p(0.55,0.65),p(0.50,0.66),p(0.45,0.65)], closed: true),
+            .init(id: "innerLips", points: [p(0.41,0.62),p(0.50,0.63),p(0.59,0.62),p(0.50,0.64)], closed: true)
+        ]
+        let points = Dictionary(uniqueKeysWithValues: paths.map { ($0.id, $0.points) })
+        var value = report
+        value.id = "ruyuan-ui-scanner-synthetic-v1"
+        value.landmarks = paths
+        value.geometry += FaceGeometryAnalyzer.metrics(landmarks: points, width: value.imageWidth, height: value.imageHeight)
+        value.overlays += FaceGeometryAnalyzer.overlays(landmarks: points, width: value.imageWidth, height: value.imageHeight)
+        value.summary = "仅用于 UI 自动测试的原创插画和手工合成点位，不是真实照片或检测结果。"
+        return value
+    }
+    #endif
+
 }

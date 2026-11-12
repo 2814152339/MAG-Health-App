@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-11-12",
+  "metadata_transport": "https://hf-mirror.com (direct huggingface.co unavailable from this host)",
+  "models": [
+    {
+      "id": "acne",
+      "repo": "imfarzanansari/skintelligent-acne",
+      "revision": "f6ac6218b590f518d0a831472c7528b12bd53ae2",
+      "license": "mit",
+      "source": "https://huggingface.co/imfarzanansari/skintelligent-acne",
+      "files": [
+        {
+          "name": "README.md",
+          "bytes": 1807,
+          "git_blob_sha1": "95e2edc470fe9989b9b9d617aa86b61d10ab04b5",
+          "sha256": null
+        },
+        {
+          "name": "config.json",
+          "bytes": 851,
+          "git_blob_sha1": "4b138177f006718432ee8fb87e504a84e5d93bb5",
+          "sha256": null
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 343233204,
+          "git_blob_sha1": "c03cb5f2ae6dd4f1214df40b4bf706e59cfdba82",
+          "sha256": "973ff1be5f2142c7daa6de784f39bf5838fdbaa73e816c107a1b8dafdc35571a"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 325,
+          "git_blob_sha1": "273d24924a8bd10227b532d603484f165dcb0b5d",
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "id": "wrinkles",
+      "repo": "imfarzanansari/skintelligent-wrinkles",
+      "revision": "32ddddd41a7e035bbe3abbe4510e0a0ca4b6fb12",
+      "license": "mit",
+      "source": "https://huggingface.co/imfarzanansari/skintelligent-wrinkles",
+      "files": [
+        {
+          "name": "README.md",
+          "bytes": 650,
+          "git_blob_sha1": "be035cb2012d0db88f116e2945c4e2ae5f9189a1",
+          "sha256": null
+        },
+        {
+          "name": "config.json",
+          "bytes": 737,
+          "git_blob_sha1": "11a35eb68cefdfd645daaa93e728fb6203e7efb8",
+          "sha256": null
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 343223968,
+          "git_blob_sha1": "557873a5ae49a458c3438e38fb6f731914856081",
+          "sha256": "b779f987998b90193cd855eed27243fd5ebf8aa8fce7e178d7570372b50dae1c"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 325,
+          "git_blob_sha1": "273d24924a8bd10227b532d603484f165dcb0b5d",
+          "sha256": null
+        }
+      ]
+    },
+    {
+      "id": "skin_type",
+      "repo": "dima806/skin_types_image_detection",
+      "revision": "5aace4f4df0ba3265a07fbddab12a4ad38e0f6a6",
+      "license": "apache-2.0",
+      "source": "https://huggingface.co/dima806/skin_types_image_detection",
+      "files": [
+        {
+          "name": "README.md",
+          "bytes": 783,
+          "git_blob_sha1": "0d26c70732c8c5ce0f91b687e7c6037542a99e80",
+          "sha256": null
+        },
+        {
+          "name": "config.json",
+          "bytes": 754,
+          "git_blob_sha1": "fdb7d23712eff556d9fde928aab43fb2478c974f",
+          "sha256": null
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 343227052,
+          "git_blob_sha1": "25b8167c19ed75f25ebd0c5ab68edceee41510ea",
+          "sha256": "572185743c6be523efcc72b71f12c089cb81baf54525a1831b333544ba47224a"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 578,
+          "git_blob_sha1": "479edcede650504575778c04f4ea8991ee29ce07",
+          "sha256": null
+        }
+      ]
+    }
+  ]
+}

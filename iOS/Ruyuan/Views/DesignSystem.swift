@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 
 enum RuyuanStyle {
-    static let background = Color(hex: "F0EEFF")
+    static let background = Color(hex: "F0EFFF")
     static let ink = Color(hex: "252138")
-    static let muted = Color(hex: "89859A")
+    static let muted = Color(hex: "7A758C")
     static let purple = Color(hex: "6250E8")
     static let lilac = Color(hex: "E7E2FF")
     static let line = Color(hex: "E7E4F4")
@@ -37,9 +37,9 @@ struct RuyuanCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(RuyuanStyle.line.opacity(0.7), lineWidth: 0.7)
             }
     }

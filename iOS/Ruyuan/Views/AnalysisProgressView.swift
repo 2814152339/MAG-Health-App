@@ -3,207 +3,352 @@ import SwiftUI
 private enum ScanScene: Int, CaseIterable {
     case outline, face, thirds, eyes, triangle, brow, nose, texture, spots, eyeArea
     var title: String {
+        ["定位面部关键点", "脸型与下颌轮廓", "面部纵向比例", "五眼与眼间距", "面部三角与下巴",
+         "眉眼精细分析", "鼻唇比例", "面部纹路与肌理", "肤色与点状外观", "眼周外观"][rawValue]
+    }
+    var duration: Double { [3, 7, 6, 6, 6, 8, 6, 9, 7, 8][rawValue] }
+    var tokens: [String] {
         switch self {
-        case .outline:return "定位面部关键点"
-        case .face:return "脸型与下颌轮廓"
-        case .thirds:return "面部纵向比例"
-        case .eyes:return "五眼与眼间距"
-        case .triangle:return "面部三角与下巴"
-        case .brow:return "眉眼精细分析"
-        case .nose:return "鼻唇比例"
-        case .texture:return "面部纹路与肌理"
-        case .spots:return "肤色与点状外观"
-        case .eyeArea:return "眼周外观"
+        case .outline: return ["face-landmarks"]
+        case .face: return ["jaw", "contour", "face-shape", "chin"]
+        case .thirds: return ["third", "vertical", "user-calibration"]
+        case .eyes: return ["five", "eye-inner", "left-eye-width", "right-eye-width", "eye-gap"]
+        case .triangle: return ["triangle", "chin"]
+        case .brow: return ["brow", "eye-aspect", "canthus", "inner-angle", "geometry-eye"]
+        case .nose: return ["nose", "lip", "mouth"]
+        case .texture: return ["wrinkle", "texture", "line-", "forehead", "nasolabial"]
+        case .spots: return ["spot", "pore", "dark", "redness", "highlight", "blackhead", "acne"]
+        case .eyeArea: return ["under-eye", "eye-area", "dark-circle", "lines-eye", "crow"]
         }
     }
-    var tokens:[String] {
+    var landmarkNames: [String] {
         switch self {
-        case .outline:return ["face-landmarks"]
-        case .face:return ["jaw","contour","face-shape","chin"]
-        case .thirds:return ["third","vertical","lower-face"]
-        case .eyes:return ["five","eye-inner","left-eye-width","right-eye-width","eye-gap"]
-        case .triangle:return ["triangle","chin"]
-        case .brow:return ["brow","eye-aspect","canthus"]
-        case .nose:return ["nose","lip","mouth"]
-        case .texture:return ["wrinkle","texture","line","forehead","nasolabial"]
-        case .spots:return ["spot","pore","dark","redness","highlight","blackhead"]
-        case .eyeArea:return ["under-eye","eye-area","dark-circle","crow"]
+        case .outline: return ["faceContour", "leftEye", "rightEye", "nose", "outerLips"]
+        case .face, .thirds: return ["faceContour", "leftEyebrow", "rightEyebrow", "nose", "outerLips"]
+        case .eyes, .triangle: return ["leftEye", "rightEye", "nose", "faceContour"]
+        case .brow: return ["leftEyebrow", "rightEyebrow", "leftEye", "rightEye"]
+        case .nose: return ["nose", "noseCrest", "outerLips", "innerLips"]
+        default: return []
         }
     }
-    var landmarkNames:[String] {
-        switch self {
-        case .outline:return ["faceContour","leftEye","rightEye","nose","outerLips"]
-        case .face,.thirds:return ["faceContour","leftEyebrow","rightEyebrow","nose","outerLips"]
-        case .eyes,.triangle:return ["leftEye","rightEye","nose","faceContour"]
-        case .brow:return ["leftEyebrow","rightEyebrow","leftEye","rightEye"]
-        case .nose:return ["nose","noseCrest","outerLips","innerLips"]
-        default:return []
-        }
-    }
-    var isCloseUp:Bool { self == .brow || self == .eyeArea }
+}
+
+private struct ScanMeasurement: Identifiable {
+    let id: String
+    let anchor: NormalizedPoint
+    let text: String
 }
 
 @MainActor
 struct AnalysisProgressView: View {
-    @EnvironmentObject private var store:AppStore
+    @EnvironmentObject private var store: AppStore
     @State private var sceneIndex = 0
+    @State private var sceneElapsed: Double = 0
     @State private var paused = false
     @State private var skipRequested = false
     @State private var showCancel = false
-    private var scene:ScanScene { ScanScene.allCases[min(sceneIndex,ScanScene.allCases.count-1)] }
+    private var scene: ScanScene { ScanScene.allCases[min(sceneIndex, ScanScene.allCases.count - 1)] }
+
     var body: some View {
-        VStack(spacing:0) {
+        VStack(spacing: 0) {
             header
-            if let report=store.scanReport {
-                scanPhoto(report)
-                resultPanel(report)
-                playback(report)
+            if let report = store.scanReport {
+                GeometryReader { proxy in
+                    ZStack(alignment: .bottom) {
+                        scanPhoto(report)
+                        resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
+                    }.frame(width: proxy.size.width, height: proxy.size.height)
+                }
+                playback
             } else {
                 waitingPhoto
                 taskPanel
             }
         }
-        .background(Color(hex:"444649")).ignoresSafeArea(edges:.bottom)
+        .background(Color(hex: "444649")).ignoresSafeArea(edges: .bottom)
         .accessibilityIdentifier("analysisScanner")
-        .task(id:store.scanReport?.id) {
+        .task(id: store.scanReport?.id) {
             guard store.scanReport != nil else { return }
-            if skipRequested { store.finishScanPresentation();return }
-            while sceneIndex < ScanScene.allCases.count {
-                do { try await Task.sleep(for:.milliseconds(250)) } catch { return }
+            if skipRequested { store.finishScanPresentation(); return }
+            while store.scanReport != nil {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                if skipRequested { store.finishScanPresentation(); return }
                 if paused { continue }
-                var elapsed = 0
-                while elapsed < 12 {
-                    do { try await Task.sleep(for:.milliseconds(250)) } catch { return }
-                    if !paused { elapsed += 1 }
-                    if skipRequested { store.finishScanPresentation();return }
-                }
-                if sceneIndex < ScanScene.allCases.count-1 {
-                    withAnimation(.easeInOut(duration:0.45)) { sceneIndex += 1 }
-                } else {
-                    store.finishScanPresentation();return
+                sceneElapsed += 0.25
+                if sceneElapsed >= scene.duration {
+                    if sceneIndex == ScanScene.allCases.count - 1 { store.finishScanPresentation(); return }
+                    withAnimation(.easeInOut(duration: 0.5)) { sceneIndex += 1; sceneElapsed = 0 }
                 }
             }
         }
-        .alert("结束本次分析？",isPresented:$showCancel) {
-            Button("继续分析",role:.cancel) {}
-            Button("结束",role:.destructive) {
+        .alert("结束本次分析？", isPresented: $showCancel) {
+            Button("继续分析", role: .cancel) {}
+            Button("结束", role: .destructive) {
                 if store.scanReport != nil { store.finishScanPresentation() } else { store.cancelAnalysis() }
             }
-        } message:{ Text("尚未完成的本次任务会被取消。") }
+        } message: { Text("尚未完成的本次任务会被取消。") }
     }
-    private var header:some View {
+
+    private var header: some View {
         HStack {
             Button {
-                if store.scanReport != nil { store.finishScanPresentation() } else { showCancel=true }
-            } label:{Image(systemName:"chevron.left").font(.title3).frame(width:40,height:42)}
-            Text("测肤质").font(.headline)
+                if store.scanReport != nil { store.finishScanPresentation() } else { showCancel = true }
+            } label: { Image(systemName: "chevron.left").font(.body).frame(width: 36, height: 42) }
+                .accessibilityLabel("返回报告")
+            Text("测肤质").font(.subheadline.weight(.medium))
             Spacer()
             Button("跳过") {
-                if store.scanReport != nil { store.finishScanPresentation() } else { skipRequested=true }
-            }.font(.subheadline).padding(.horizontal,14).accessibilityIdentifier("skipScanButton")
-        }.foregroundStyle(RuyuanStyle.ink).padding(.vertical,5).padding(.horizontal,8).background(.white)
+                if store.scanReport != nil { store.finishScanPresentation() } else { skipRequested = true }
+            }.font(.caption).padding(.horizontal, 14).accessibilityIdentifier("skipScanButton")
+        }.foregroundStyle(RuyuanStyle.ink).padding(.horizontal, 6).background(.white)
     }
-    private var waitingPhoto:some View {
+
+    private var waitingPhoto: some View {
         GeometryReader { proxy in
             ZStack {
                 Color.black
-                if let image=store.analysisImage { Image(uiImage:image).resizable().scaledToFit() }
+                if let image = store.analysisImage { Image(uiImage: image).resizable().scaledToFit() }
                 VStack {
-                    HStack { Text(store.stage.title).font(.caption);Spacer();ProgressView().tint(.white) }
-                        .padding(14).background(.black.opacity(0.2))
+                    HStack { Text(store.stage.title).font(.caption); Spacer(); ProgressView().tint(.white) }
+                        .padding(14).background(.black.opacity(0.25))
                     Spacer()
-                    Text("正在处理这张照片").font(.subheadline).padding(12).background(.black.opacity(0.45),in:Capsule()).padding(18)
+                    Text("正在处理这张照片").font(.caption).padding(12)
+                        .background(.black.opacity(0.45), in: Capsule()).padding(18)
                 }.foregroundStyle(.white)
                 TimelineView(.animation) { time in
-                    let fraction = time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy:3)/3
-                    Rectangle().fill(LinearGradient(colors:[.clear,Color(hex:"7775FF").opacity(0.75),.clear],startPoint:.top,endPoint:.bottom))
-                        .frame(height:24).position(x:proxy.size.width/2,y:proxy.size.height*fraction)
+                    let fraction = time.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 3) / 3
+                    Rectangle().fill(LinearGradient(colors: [.clear, Color(hex: "7775FF").opacity(0.75), .clear],
+                                                    startPoint: .top, endPoint: .bottom))
+                        .frame(height: 24).position(x: proxy.size.width / 2, y: proxy.size.height * fraction)
                 }.allowsHitTesting(false)
             }
-        }.frame(maxHeight:.infinity)
+        }.frame(maxHeight: .infinity)
     }
-    private var taskPanel:some View {
-        VStack(alignment:.leading,spacing:16) {
-            Text(store.isCancelling ? "正在结束任务…":"正在生成您的测肤报告…").font(.headline)
-            TimelineView(.periodic(from:.now,by:1)) { context in
-                Text("进行中  当前已用时 \(max(0,Int(context.date.timeIntervalSince(store.analysisStartedAt)))) 秒")
-                    .font(.caption).foregroundStyle(RuyuanStyle.muted)
+
+    private var taskPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(store.isCancelling ? "正在结束任务…" : "正在生成您的测肤报告…", systemImage: "sparkle.magnifyingglass")
+                .font(.subheadline.weight(.medium))
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text("进行中  当前已用时 \(max(0, Int(context.date.timeIntervalSince(store.analysisStartedAt)))) 秒")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.muted)
             }
-            ForEach(AnalysisStage.allCases,id:\.rawValue) { item in
-                let a=AnalysisStage.allCases.firstIndex(of:item) ?? 0
-                let b=AnalysisStage.allCases.firstIndex(of:store.stage) ?? 0
-                HStack {
-                    Image(systemName:a < b ? "checkmark.circle.fill":a == b ? "circle.dotted":"circle")
-                    Text(item.title)
-                    Spacer()
-                    if item == store.stage { ProgressView().controlSize(.small) }
-                }.font(.caption).foregroundStyle(a <= b ? RuyuanStyle.purple:RuyuanStyle.muted)
+            ForEach(AnalysisStage.allCases, id: \.rawValue) { item in
+                let a = AnalysisStage.allCases.firstIndex(of: item) ?? 0
+                let b = AnalysisStage.allCases.firstIndex(of: store.stage) ?? 0
+                HStack(spacing: 7) {
+                    Image(systemName: a < b ? "checkmark.circle.fill" : a == b ? "circle.dotted" : "circle")
+                    Text(item.title); Spacer()
+                    if item == store.stage { ProgressView().controlSize(.mini) }
+                }.font(.caption2).foregroundStyle(a <= b ? RuyuanStyle.purple : RuyuanStyle.muted)
             }
-            if skipRequested { Text("已跳过结果动画，计算完成后直接打开报告。").font(.caption).foregroundStyle(RuyuanStyle.muted) }
-        }.padding(22).background(.white,in:RoundedRectangle(cornerRadius:18)).padding(20).padding(.bottom,15)
+            if skipRequested { Text("计算完成后直接打开报告，不再播放结果动画。").font(.caption2).foregroundStyle(RuyuanStyle.muted) }
+        }.padding(18).background(.white, in: RoundedRectangle(cornerRadius: 16)).padding(18).padding(.bottom, 20)
     }
-    private func scanPhoto(_ report:AnalysisReport)->some View {
-        let layers=report.overlays.filter { layer in scene.tokens.contains(where:{layer.id.localizedCaseInsensitiveContains($0)}) }
-        let selected=report.landmarks.filter { scene.landmarkNames.contains($0.id) }
+
+    private func displayLayers(_ report: AnalysisReport) -> [OverlayLayer] {
+        report.overlays.filter { layer in scene.tokens.contains { layer.id.localizedCaseInsensitiveContains($0) } }.map { layer in
+            guard layer.id.hasPrefix("geometry-") else { return layer }
+            var styled = layer; styled.colorHex = "8C86FF"; return styled
+        }
+    }
+
+    private func region(_ report: AnalysisReport) -> CGRect? {
+        guard scene == .brow || scene == .eyeArea else { return nil }
+        let eye = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
+            .min { ($0.points.map(\.x).min() ?? 1) < ($1.points.map(\.x).min() ?? 1) }
+        guard let eye else { return nil }
+        let browID = eye.id == "leftEye" ? "leftEyebrow" : "rightEyebrow"
+        let points = eye.points + (report.landmarks.first { $0.id == browID }?.points ?? [])
+        return ReportPhotoTransform.region(points: points, padding: CGSize(width: 0.13, height: 0.19),
+                                           minimum: CGSize(width: 0.40, height: 0.48))
+    }
+
+    private func scanPhoto(_ report: AnalysisReport) -> some View {
+        let focus = region(report)
+        let paths = report.landmarks.filter { scene.landmarkNames.contains($0.id) }
         return GeometryReader { proxy in
-            ZStack(alignment:.topLeading) {
-                ReportPhotoView(report:report,image:store.analysisImage,layers:layers)
-                if !selected.isEmpty {
-                    let w=CGFloat(report.imageWidth),h=CGFloat(report.imageHeight)
-                    let factor=min(proxy.size.width/max(w,1),proxy.size.height/max(h,1))
-                    NormalizedOverlayDrawing(layers:[],landmarks:selected)
-                        .frame(width:w*factor,height:h*factor)
-                        .position(x:proxy.size.width/2,y:proxy.size.height/2)
+            let transform = ReportPhotoTransform(
+                imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
+                viewport: proxy.size, region: focus ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+            ZStack(alignment: .topLeading) {
+                FocusedReportPhotoView(report: report, image: store.analysisImage, layers: displayLayers(report),
+                                       landmarks: paths, region: focus)
+                measurementGuides(report, transform: transform)
+                ForEach(measurements(report)) { item in
+                    Text(item.text).font(.system(size: 9, weight: .medium)).multilineTextAlignment(.center)
+                        .foregroundStyle(.white).shadow(color: .black.opacity(0.9), radius: 2)
+                        .padding(3).background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 3))
+                        .position(transform.position(item.anchor))
                 }
-                VStack(alignment:.leading,spacing:5) {
-                    Text(scene.title).font(.subheadline.weight(.semibold))
-                    Text("已计算结果 · \(sceneIndex+1)/\(ScanScene.allCases.count)").font(.caption2)
-                }.foregroundStyle(.white).padding(12).background(.black.opacity(0.35),in:RoundedRectangle(cornerRadius:10)).padding(12)
-            }
-            .scaleEffect(scene.isCloseUp ? 1.55:1,anchor:scene.isCloseUp ? .top:.center)
-            .animation(.easeInOut(duration:0.5),value:sceneIndex)
-        }.clipped().frame(maxHeight:.infinity).accessibilityIdentifier("scanOriginalPhoto")
+                HStack(spacing: 5) {
+                    Circle().fill(Color(hex: "8A82FF")).frame(width: 5, height: 5)
+                    Text("\(scene.title) · 已计算结果回放").font(.system(size: 10))
+                        .accessibilityIdentifier("scanSceneTitle")
+                    Spacer()
+                    Text("\(sceneIndex + 1)/\(ScanScene.allCases.count)").font(.system(size: 9).monospacedDigit())
+                }.foregroundStyle(.white).padding(10).background(.black.opacity(0.20))
+            }.animation(.easeInOut(duration: 0.5), value: sceneIndex)
+        }.clipped().accessibilityElement(children: .contain)
+        .accessibilityLabel("本次照片与实际测量标注")
+        .accessibilityValue(focus == nil ? "完整照片" : "已按实际眉眼点位定位局部")
+        .accessibilityIdentifier("scanOriginalPhoto")
     }
-    private func resultPanel(_ report:AnalysisReport)->some View {
-        let metrics=report.geometry.filter{ metric in metric.value != nil && scene.tokens.contains(where:{metric.id.localizedCaseInsensitiveContains($0)}) }
-        let layers=report.overlays.filter{layer in scene.tokens.contains(where:{layer.id.localizedCaseInsensitiveContains($0)})}
-        return VStack(alignment:.leading,spacing:9) {
-            HStack {Text(scene.title).font(.headline);Spacer();Image(systemName:"viewfinder")}
-            if sceneIndex <= ScanScene.nose.rawValue {
-                if metrics.isEmpty {
-                    Text(scene == .thirds ? "三庭需要发际线位置，可在报告的校准工具中手动标记。":"已显示实际识别的面部轮廓与关键点。")
-                        .font(.subheadline).fixedSize(horizontal:false,vertical:true)
+
+    private func measurementGuides(_ report: AnalysisReport, transform: ReportPhotoTransform) -> some View {
+        Canvas { context, _ in
+            guard [.face, .thirds, .eyes].contains(scene),
+                  let contour = report.landmarks.first(where: { $0.id == "faceContour" }),
+                  let left = contour.points.map(\.x).min(), let right = contour.points.map(\.x).max(),
+                  let top = contour.points.map(\.y).min(), let bottom = contour.points.map(\.y).max() else { return }
+            func line(_ a: NormalizedPoint, _ b: NormalizedPoint, arrows: Bool = false) {
+                let start = transform.position(a), end = transform.position(b)
+                var path = Path(); path.move(to: start); path.addLine(to: end)
+                context.stroke(path, with: .color(arrows ? Color(hex: "8C86FF") : .white.opacity(0.8)),
+                               style: StrokeStyle(lineWidth: arrows ? 1.1 : 0.7, dash: arrows ? [] : [2, 3]))
+                if arrows {
+                    let angle = atan2(end.y - start.y, end.x - start.x)
+                    for (point, direction) in [(start, angle), (end, angle + .pi)] {
+                        var head = Path()
+                        head.move(to: CGPoint(x: point.x + cos(direction - 0.5) * 6, y: point.y + sin(direction - 0.5) * 6))
+                        head.addLine(to: point)
+                        head.addLine(to: CGPoint(x: point.x + cos(direction + 0.5) * 6, y: point.y + sin(direction + 0.5) * 6))
+                        context.stroke(head, with: .color(Color(hex: "8C86FF")), lineWidth: 1)
+                    }
+                }
+            }
+            if scene == .face {
+                let corners: [NormalizedPoint] = [.init(x: left, y: top), .init(x: right, y: top),
+                    .init(x: right, y: bottom), .init(x: left, y: bottom), .init(x: left, y: top)]
+                for index in 1..<corners.count { line(corners[index - 1], corners[index]) }
+                line(.init(x: max(0, left - 0.025), y: top), .init(x: max(0, left - 0.025), y: bottom), arrows: true)
+                line(.init(x: left, y: (top + bottom) / 2), .init(x: right, y: (top + bottom) / 2), arrows: true)
+            } else if scene == .thirds {
+                let eyebrows = report.landmarks.filter { ["leftEyebrow", "rightEyebrow"].contains($0.id) }.flatMap(\.points)
+                let brow = eyebrows.isEmpty ? nil : eyebrows.map(\.y).reduce(0, +) / Double(eyebrows.count)
+                let nose = report.landmarks.first(where: { $0.id == "nose" })?.points.map(\.y).max()
+                let guides = [report.calibration?.hairlineY, brow, nose, bottom].compactMap { $0 }
+                for y in guides { line(.init(x: left, y: y), .init(x: right, y: y)) }
+            } else {
+                let eyes = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
+                let positions = ([left, right] + eyes.flatMap { eye in [eye.points.map(\.x).min(), eye.points.map(\.x).max()].compactMap { $0 } }).sorted()
+                for x in positions { line(.init(x: x, y: top), .init(x: x, y: bottom)) }
+            }
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private func measurements(_ report: AnalysisReport) -> [ScanMeasurement] {
+        func center(_ names: [String]) -> NormalizedPoint? {
+            let points = report.landmarks.filter { names.contains($0.id) }.flatMap(\.points)
+            guard !points.isEmpty else { return nil }
+            return .init(x: points.map(\.x).reduce(0, +) / Double(points.count),
+                         y: points.map(\.y).reduce(0, +) / Double(points.count))
+        }
+        var values: [ScanMeasurement] = []
+        func add(_ id: String, _ title: String, _ names: [String], dy: Double = 0) {
+            guard let metric = report.geometry.first(where: { $0.id == id && $0.value != nil }), var point = center(names) else { return }
+            point.y = min(0.96, max(0.04, point.y + dy))
+            values.append(.init(id: id, anchor: point, text: title + "\n" + metric.formattedValue))
+        }
+        switch scene {
+        case .face:
+            add("v2-jaw-left-angle", "二维轮廓角", ["faceContour"], dy: 0.17)
+            add("v2-contour-aspect", "可见轮廓高宽比", ["leftEyebrow", "rightEyebrow"], dy: -0.11)
+        case .thirds:
+            add("calibrated-upper-third", "上庭占比", ["leftEyebrow", "rightEyebrow"], dy: -0.08)
+            add("calibrated-middle-third", "中庭占比", ["nose"], dy: -0.05)
+            add("calibrated-lower-third", "下庭占比", ["outerLips"], dy: 0.08)
+        case .eyes:
+            add("v2-five-left-eye", "眼宽 / 平均眼宽", ["leftEye"], dy: -0.055)
+            add("v2-five-right-eye", "眼宽 / 平均眼宽", ["rightEye"], dy: -0.055)
+            add("v2-five-gap", "眼间距比", ["leftEye", "rightEye"], dy: 0.07)
+        case .triangle:
+            add("v2-triangle-mouth-angle", "三角顶角", ["outerLips"], dy: -0.045)
+            add("v2-chin-height-width", "颏区高宽比", ["faceContour"], dy: 0.20)
+        case .brow:
+            for (eye, brow, tilt) in [("leftEye", "leftEyebrow", "left-brow-tilt"), ("rightEye", "rightEyebrow", "right-brow-tilt")] {
+                add(tilt, "眉端点倾角", [brow], dy: -0.045)
+                add("v2-\(eye)-inner-angle", "眼内侧轮廓角", [eye], dy: 0.045)
+            }
+        case .nose:
+            add("nose-mouth", "鼻宽 / 嘴宽", ["nose"], dy: -0.055)
+            add("lip-upper-lower", "上下唇轮廓比", ["outerLips"], dy: 0.065)
+        default:
+            for item in report.skin.flatMap(\.items) where scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) {
+                guard let id = item.overlayID, let layer = report.overlays.first(where: { $0.id == id }),
+                      let rect = ReportPhotoTransform.region(points: layer.paths.flatMap { $0 }, padding: .zero, minimum: .zero) else { continue }
+                values.append(.init(id: item.id, anchor: .init(x: Double(rect.midX), y: Double(rect.minY)),
+                                    text: item.title + "\n" + item.valueText))
+            }
+        }
+        return Array(values.prefix(6))
+    }
+
+    private func resultPanel(_ report: AnalysisReport) -> some View {
+        let matchingMetrics = report.geometry.filter { metric in metric.value != nil && scene.tokens.contains(where: { metric.id.localizedCaseInsensitiveContains($0) }) }
+        let items = report.skin.flatMap(\.items).filter { item in scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) }
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack { Text(scene.title).font(.caption.weight(.semibold)); Spacer(); Image(systemName: "scope").font(.caption) }
+            if scene.rawValue <= ScanScene.nose.rawValue {
+                if matchingMetrics.isEmpty {
+                    Text(scene == .thirds ? "发际线尚未标记，三庭不补值；可在报告中手动标定。" : "显示本次实际识别的面部轮廓与五官点位。")
+                        .font(.caption2).lineSpacing(3)
                 } else {
-                    ForEach(Array(metrics.prefix(4))) { metric in
-                        HStack(alignment:.firstTextBaseline) {
-                            Text(metric.title).font(.caption).lineLimit(2)
-                            Spacer()
-                            Text(metric.formattedValue).font(.subheadline.weight(.medium)).monospacedDigit()
+                    ForEach(Array(matchingMetrics.prefix(3))) { metric in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(metric.title).font(.system(size: 10)).lineLimit(1); Spacer()
+                            Text(metric.formattedValue).font(.system(size: 11, weight: .medium)).monospacedDigit()
                         }
                     }
                 }
-                Text("二维照片投影 · 无标尺时使用比例与角度，不伪造毫米值").font(.system(size:10)).foregroundStyle(.white.opacity(0.6))
-            } else if layers.isEmpty {
-                Text("本次未形成这一部位的有效标注，请在报告中查看采样说明。").font(.caption)
+            } else if items.isEmpty {
+                Text("本次没有这一部位的可靠分项，不生成假计数或严重程度。").font(.caption2).lineSpacing(3)
             } else {
-                ForEach(Array(layers.prefix(3))) { layer in
-                    HStack { Circle().fill(Color(hex:layer.colorHex)).frame(width:5,height:5);Text(layer.title);Spacer();Text(layer.paths.isEmpty ? "无有效标注":"已生成标注") }
-                        .font(.caption)
+                ForEach(Array(items.prefix(3))) { item in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(item.title).font(.system(size: 10)); Spacer()
+                        Text(item.valueText).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.trailing)
+                    }
                 }
-                Text("显示实际图像响应；具体含义见报告，不将候选标注当诊断。").font(.system(size:10)).foregroundStyle(.white.opacity(0.6))
             }
-        }.foregroundStyle(.white).padding(18).frame(maxWidth:.infinity,alignment:.leading)
-            .background(Color.black.opacity(0.55),in:RoundedRectangle(cornerRadius:10))
-            .overlay(RoundedRectangle(cornerRadius:10).stroke(Color(hex:"7775FF"),lineWidth:2))
-            .padding(.horizontal,20).padding(.top,14).frame(minHeight:165)
+            Text("二维照片外观参考 · 仅有本人实测标尺时显示毫米")
+                .font(.system(size: 8)).foregroundStyle(.white.opacity(0.60))
+        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.black.opacity(0.72), in: ScanPanelShape())
+            .overlay { ScanPanelShape().stroke(Color(hex: "7E78FF"), lineWidth: 1.5) }
+            .overlay { RoundedRectangle(cornerRadius: 5).inset(by: 7).stroke(.white.opacity(0.7), lineWidth: 0.7) }
+            .overlay(alignment: .topLeading) { Capsule().fill(Color(hex: "7775FF")).frame(width: 55, height: 3).offset(x: 24, y: -3) }
+            .accessibilityIdentifier("scanMeasurementPanel")
     }
-    private func playback(_ report:AnalysisReport)->some View {
+
+    private var playback: some View {
         HStack {
-            Button { if sceneIndex>0 { sceneIndex -= 1 } } label:{Image(systemName:"backward.end").frame(width:44,height:44)}.disabled(sceneIndex == 0)
+            Button { if sceneIndex > 0 { sceneIndex -= 1; sceneElapsed = 0 } } label: { Image(systemName: "backward.end").frame(width: 36, height: 38) }
+                .disabled(sceneIndex == 0).accessibilityLabel("上一分析画面").accessibilityIdentifier("scanPreviousScene")
             Spacer()
-            Button { paused.toggle() } label:{Label(paused ? "继续":"暂停",systemImage:paused ? "play.fill":"pause.fill")}.font(.caption)
+            Button { paused.toggle() } label: { Label(paused ? "继续" : "暂停", systemImage: paused ? "play.fill" : "pause.fill") }
+                .font(.caption2).accessibilityIdentifier("scanPausePlayback")
             Spacer()
-            Button("查看报告") {store.finishScanPresentation()}.font(.subheadline.weight(.medium)).accessibilityIdentifier("scanViewReport")
-        }.foregroundStyle(.white).padding(.horizontal,24).padding(.top,8).padding(.bottom,30)
+            Button { if sceneIndex < ScanScene.allCases.count - 1 { sceneIndex += 1; sceneElapsed = 0 } } label: { Image(systemName: "forward.end").frame(width: 36, height: 38) }
+                .accessibilityLabel("下一分析画面").accessibilityIdentifier("scanNextScene")
+            Button("查看报告") { store.finishScanPresentation() }.font(.caption.weight(.medium)).accessibilityIdentifier("scanViewReport")
+        }.foregroundStyle(.white).padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 20)
+    }
+}
+
+private struct ScanPanelShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let cut: CGFloat = 9
+        return Path { path in
+            path.move(to: CGPoint(x: rect.minX + cut, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - cut, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + cut))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cut))
+            path.addLine(to: CGPoint(x: rect.maxX - cut, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + cut, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - cut))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cut)); path.closeSubpath()
+        }
     }
 }

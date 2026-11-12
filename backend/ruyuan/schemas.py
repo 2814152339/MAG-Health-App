@@ -45,6 +45,7 @@ class SkinMetric(StrictModel):
     score: float | None
     status: str
     items: list[SkinItem]
+    scoreSource: str | None = None
 
 
 class LandmarkPath(StrictModel):

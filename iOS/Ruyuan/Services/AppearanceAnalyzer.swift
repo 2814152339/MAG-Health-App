@@ -10,11 +10,13 @@ struct AppearanceAnalyzer {
         let summary: String
     }
 
-    static let version = "RY-PhotoAppearance-v2"
-    private static let source = version + "; sRGB/D65 Lab + geometric ROI + fixed-threshold image features; no trained checkpoint"
+    static let version = "RY-PhotoAppearance-v3"
 
     static func analyze(raster: LocalAnalyzer.Raster,
-                        landmarks: [String: [NormalizedPoint]], faceBox: CGRect) -> Result {
+                        landmarks: [String: [NormalizedPoint]], faceBox: CGRect,
+                        segmentation: FaceSegmentationService.Mask? = nil) -> Result {
+        let source = version + "; sRGB/D65 Lab + fixed-threshold appearance features; " +
+            (segmentation == nil ? "geometric ROI only; semantic model unavailable" : FaceSegmentationService.source + "; face-skin class 3 probability >= 0.65; Vision feature exclusions")
         let width = raster.width, height = raster.height
         guard width >= 8, height >= 8, width <= 2048, height <= 2048,
               raster.pixels.count == width * height * 4,
@@ -43,7 +45,9 @@ struct AppearanceAnalyzer {
             for x in 0..<width {
                 let p = point(x, y, width, height), i = y * width + x
                 if layout.cheeks.contains(where: { inEllipse(p, $0.insetBy(dx: $0.width * 0.17, dy: $0.height * 0.17)) }),
-                   !layout.exclusions.contains(where: { $0.contains(p) }), l[i] > 15, l[i] < 96 {
+                   !layout.exclusions.contains(where: { $0.contains(p) }),
+                   segmentation?.accepts(.faceSkin, x: Double(p.x), y: Double(p.y)) ?? true,
+                   l[i] > 15, l[i] < 96 {
                     seed.append(i)
                 }
             }
@@ -57,7 +61,8 @@ struct AppearanceAnalyzer {
         for y in 0..<height {
             for x in 0..<width {
                 let p = point(x, y, width, height), i = y * width + x
-                let gated = l[i] > max(12, baseL - 32) && l[i] < 98 && abs(a[i] - baseA) <= 23 && abs(b[i] - baseB) <= 28
+                let semanticSkin = segmentation?.accepts(.faceSkin, x: Double(p.x), y: Double(p.y)) ?? true
+                let gated = semanticSkin && l[i] > max(12, baseL - 32) && l[i] < 98 && abs(a[i] - baseA) <= 23 && abs(b[i] - baseB) <= 28
                 if layout.underEyes.contains(where: { $0.contains(p) }) {
                     totalEye += 1
                     if l[i] < baseL - 28 || abs(a[i] - baseA) > 26 || abs(b[i] - baseB) > 30 { excludedDarkEye += 1 }
@@ -145,7 +150,8 @@ struct AppearanceAnalyzer {
         let underOccluded = totalEye == 0 || Double(excludedDarkEye) / Double(max(1, totalEye)) > 0.12
         let underDelta: Double? = !underOccluded && underEyeIndices.count >= 24
             ? mean(cheekIndices.map { l[$0] }) - mean(underEyeIndices.map { l[$0] }) : nil
-        let scope = "面部几何 ROI 经面颊颜色门控后 \(eligible.count) 像素；眼、眉、唇、鼻孔和下巴胡须区排除。不是语义皮肤分割，妆容/镜框/毛发/阴影仍可能干扰。"
+        let scope = "面部采样经面颊颜色门控后 \(eligible.count) 像素；眼、眉、唇、鼻孔和下巴胡须区排除。" +
+            (segmentation == nil ? "本次语义模型不可用，仅使用几何ROI；妆容/镜框/毛发/阴影仍可能干扰。" : "已与Google真实六分类模型的面部皮肤类（置信度≥0.65）取交集，排除毛发、身体皮肤、衣物与配饰类；仍不保证精确分割或排除妆容/阴影。")
         let scoreScope = "仅本照片视觉参考，非健康、治疗、年龄或仪器测量分；拍摄条件改变会改变数值。"
         var overlays: [OverlayLayer] = []
         func add(_ id: String, _ title: String, _ color: String, _ mask: [Bool], _ note: String, limit: Int = 650) {
@@ -209,7 +215,7 @@ struct AppearanceAnalyzer {
             return result
         }
         return Result(metrics: sourcedMetrics, overlays: overlays,
-            summary: "已完成面部颜色、相对高亮/偏红/色沉候选、分区线纹与眼下明暗外观分析。\(fineSampling ? "已按当前采样尺度提取面颊与鼻部细小暗点候选。" : unavailableFine)各图层均来自真实像素与公开公式，照片视觉参考分不代表含水量、敏感性、病理类型或年龄。\(underOccluded ? "眼周存在深色遮挡线索，未强行做眼下比较。" : "")")
+            summary: (segmentation == nil ? "语义皮肤模型本次未运行；使用几何采样区作降级分析。" : "已由本机Google六分类预训练模型分离面部皮肤、毛发与配饰，并排除眼眉唇鼻孔后采样。") + "已完成面部颜色、相对高亮/偏红/色沉候选、分区线纹与眼下明暗外观分析。\(fineSampling ? "已按当前采样尺度提取面颊与鼻部细小暗点候选。" : unavailableFine)外观候选仍来自真实像素与公开公式，不是皮肤病变分类模型；视觉参考分不代表含水量、敏感性、病理类型或年龄。\(underOccluded ? "眼周存在深色遮挡线索，未强行做眼下比较。" : "")")
     }
 
     static func labFromSRGB(red: Double, green: Double, blue: Double) -> (l: Double, a: Double, b: Double) {

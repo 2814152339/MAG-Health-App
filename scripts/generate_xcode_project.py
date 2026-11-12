@@ -29,7 +29,14 @@ app = sorted((IOS / 'Ruyuan').rglob('*.swift'))
 tests = sorted((IOS / 'RuyuanTests').rglob('*.swift'))
 ui_tests = sorted((IOS / 'RuyuanUITests').rglob('*.swift')) if (IOS / 'RuyuanUITests').exists() else []
 resources = [('Ruyuan/Resources/Assets.xcassets','folder.assetcatalog'),
-             ('Ruyuan/Resources/PrivacyInfo.xcprivacy','text.xml')]
+             ('Ruyuan/Resources/PrivacyInfo.xcprivacy','text.xml'),
+             ('Ruyuan/Resources/Models/selfie_multiclass_256x256.tflite','file'),
+             ('Ruyuan/Resources/Models/SelfieMulticlass-APACHE-2.0.txt','text')]
+
+# Exact official source revision; binary targets include their own SHA-256 pins.
+obj('package:mediapipe', 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/google-ai-edge/mediapipe"; requirement = { kind = revision; revision = "3c49477cd79f753fbe943d814b917e3c8c0bf404"; };')
+obj('packageproduct:vision', f'isa = XCSwiftPackageProductDependency; package = {ref("package:mediapipe")}; productName = MediaPipeTasksVision;')
+obj('frameworkbuild:vision', f'isa = PBXBuildFile; productRef = {ref("packageproduct:vision")};')
 group_files = {'app': [], 'tests': [], 'ui': []}
 for group, files in [('app',app),('tests',tests),('ui',ui_tests)]:
     for file in files:
@@ -56,17 +63,17 @@ for group,name,ptype,product,filetype in target_names:
     obj('group:'+group, f'isa = PBXGroup; children = {ids(group_files[group])}; name = {q(name)}; sourceTree = "<group>";')
     paths = [p.relative_to(IOS).as_posix() for p in (app if group=='app' else tests if group=='tests' else ui_tests)]
     obj('sources:'+group, f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:"+p for p in paths])}; runOnlyForDeploymentPostprocessing = 0;')
-    obj('frameworks:'+group, 'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+    obj('frameworks:'+group, f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {ids(["frameworkbuild:vision"] if group=="app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
     obj('resources:'+group, f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:"+p for p,k in resources] if group=="app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
     dependencies=[]
     if group != 'app':
         obj('proxy:'+group, f'isa = PBXContainerItemProxy; containerPortal = {ref("project")}; proxyType = 1; remoteGlobalIDString = {ref("target:app")}; remoteInfo = Ruyuan;')
         obj('dependency:'+group, f'isa = PBXTargetDependency; target = {ref("target:app")}; targetProxy = {ref("proxy:"+group)};')
         dependencies=['dependency:'+group]
-    obj('target:'+group, f'isa = PBXNativeTarget; buildConfigurationList = {ref("configlist:"+group)}; buildPhases = {ids(["sources:"+group,"frameworks:"+group,"resources:"+group])}; buildRules = (); dependencies = {ids(dependencies)}; name = {name}; productName = {name}; productReference = {ref("product:"+group)}; productType = {q(ptype)};')
+    obj('target:'+group, f'isa = PBXNativeTarget; buildConfigurationList = {ref("configlist:"+group)}; buildPhases = {ids(["sources:"+group,"frameworks:"+group,"resources:"+group])}; buildRules = (); dependencies = {ids(dependencies)}; packageProductDependencies = {ids(["packageproduct:vision"] if group=="app" else [])}; name = {name}; productName = {name}; productReference = {ref("product:"+group)}; productType = {q(ptype)};')
     for mode in ['Debug','Release']:
         settings = {'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CODE_SIGN_STYLE':'Automatic',
-                    'CURRENT_PROJECT_VERSION':'2','MARKETING_VERSION':'0.2.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
+                    'CURRENT_PROJECT_VERSION':'3','MARKETING_VERSION':'0.3.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
                     'PRODUCT_BUNDLE_IDENTIFIER':'com.ruyuan.aesthetics' + ('.tests' if group=='tests' else '.uitests' if group=='ui' else ''),
                     'PRODUCT_NAME':'$(TARGET_NAME)','SDKROOT':'iphoneos','SUPPORTED_PLATFORMS':'iphoneos iphonesimulator',
                     'SWIFT_VERSION':'5.0','SWIFT_STRICT_CONCURRENCY':'targeted','TARGETED_DEVICE_FAMILY':'1',
@@ -91,7 +98,7 @@ for mode in ['Debug','Release']:
             'ENABLE_USER_SCRIPT_SANDBOXING':'YES','GCC_C_LANGUAGE_STANDARD':'gnu17','CLANG_CXX_LANGUAGE_STANDARD':'gnu++20',
             'DEBUG_INFORMATION_FORMAT':'dwarf' if mode=='Debug' else 'dwarf-with-dsym','ENABLE_TESTABILITY':'YES' if mode=='Debug' else 'NO'})
 obj('configlist:project', f'isa = XCConfigurationList; buildConfigurations = {ids(["config:project:Debug","config:project:Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
-obj('project', f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; }}; buildConfigurationList = {ref("configlist:project")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = "zh-Hans"; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base); mainGroup = {ref("main")}; productRefGroup = {ref("products")}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target:"+x[0] for x in target_names])};')
+obj('project', f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; }}; buildConfigurationList = {ref("configlist:project")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = "zh-Hans"; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base); mainGroup = {ref("main")}; productRefGroup = {ref("products")}; packageReferences = {ids(["package:mediapipe"])}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target:"+x[0] for x in target_names])};')
 content = '// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n' + '\n'.join(objects) + f'\n\t}};\n\trootObject = {ref("project")};\n}}\n'
 (PROJECT/'project.pbxproj').write_text(content,encoding='utf-8')
 

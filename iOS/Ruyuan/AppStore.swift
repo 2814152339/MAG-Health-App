@@ -347,6 +347,21 @@ final class AppStore: ObservableObject {
 
     func showSample() { activeReport = SampleData.report }
 
+    #if DEBUG
+    /// UI-only fixture: explicitly synthetic, never saved as a user's analysis.
+    func beginUITestScan() {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-test-scan"),
+              !isAnalyzing, pending == nil else { return }
+        let report = SampleData.scannerReport
+        analysisImage = nil
+        scanReport = report
+        completedReport = report
+        analysisStartedAt = Date()
+        stage = .preparing
+        showsAnalysis = true
+    }
+    #endif
+
     func delete(_ report: AnalysisReport) {
         guard !isDeleting, !isAnalyzing, !isCancelling, !deletingIDs.contains(report.id) else { return }
         isDeleting = true

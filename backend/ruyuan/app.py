@@ -259,7 +259,7 @@ class Service:
             # string is logged or returned. Fixed allowlisted codes only.
             code = str(error) if isinstance(error, AnalysisFailure) else "analysis_failed"
             allowed = {"model_not_configured", "model_runtime_not_installed", "poor_lighting", "model_inference_failed",
-                       "no_face", "multiple_faces", "invalid_model_output", "face_too_small"}
+                       "no_face", "multiple_faces", "invalid_model_output", "face_too_small", "skin_models_unavailable"}
             if code not in allowed:
                 code = "analysis_failed"
             with self.store.transaction() as db:
@@ -332,6 +332,11 @@ def create_app(settings: Settings | None = None, *, analyzer: Callable = analyze
     def health():
         return {"status": "ok", "mode": "single_installation_development",
                 "modelConfigured": bool(settings.face_model and settings.face_model.is_file())}
+
+    @app.get("/v1/models", dependencies=[Depends(authenticate)])
+    def model_status():
+        from .trained_skin import availability
+        return {"models": availability(settings.skin_models_dir), "automaticDownloads": False}
 
     @app.post("/v1/uploads", dependencies=[Depends(authenticate)], status_code=201)
     async def upload(request: Request):

@@ -44,6 +44,61 @@ struct ReportPhotoView: View {
     }
 }
 
+/// One image-space transform for the photo, real paths, and measurement labels.
+/// A focus region is derived from this report's points, never a guessed face box.
+struct ReportPhotoTransform {
+    let imageSize: CGSize
+    let viewport: CGSize
+    var region: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+    var factor: CGFloat {
+        min(viewport.width / max(1, imageSize.width * region.width),
+            viewport.height / max(1, imageSize.height * region.height))
+    }
+    var renderedSize: CGSize { CGSize(width: imageSize.width * factor, height: imageSize.height * factor) }
+    var origin: CGPoint {
+        CGPoint(x: viewport.width / 2 - region.midX * renderedSize.width,
+                y: viewport.height / 2 - region.midY * renderedSize.height)
+    }
+    func position(_ point: NormalizedPoint) -> CGPoint {
+        CGPoint(x: origin.x + CGFloat(point.x) * renderedSize.width,
+                y: origin.y + CGFloat(point.y) * renderedSize.height)
+    }
+    static func region(points: [NormalizedPoint], padding: CGSize = CGSize(width: 0.10, height: 0.12),
+                       minimum: CGSize = CGSize(width: 0.28, height: 0.28)) -> CGRect? {
+        let valid = points.filter { $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }
+        guard let minX = valid.map(\.x).min(), let maxX = valid.map(\.x).max(),
+              let minY = valid.map(\.y).min(), let maxY = valid.map(\.y).max() else { return nil }
+        let width = min(1, max(minimum.width, CGFloat(maxX - minX) + padding.width * 2))
+        let height = min(1, max(minimum.height, CGFloat(maxY - minY) + padding.height * 2))
+        let x = min(1 - width, max(0, CGFloat(minX + maxX) / 2 - width / 2))
+        let y = min(1 - height, max(0, CGFloat(minY + maxY) / 2 - height / 2))
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+struct FocusedReportPhotoView: View {
+    let report: AnalysisReport
+    let image: UIImage?
+    var layers: [OverlayLayer] = []
+    var landmarks: [LandmarkPath] = []
+    var region: CGRect? = nil
+
+    var body: some View {
+        GeometryReader { proxy in
+            let transform = ReportPhotoTransform(
+                imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
+                viewport: proxy.size, region: region ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+            ZStack {
+                ReportPhotoView(report: report, image: image, layers: layers)
+                NormalizedOverlayDrawing(layers: [], landmarks: landmarks)
+            }
+            .frame(width: transform.renderedSize.width, height: transform.renderedSize.height)
+            .position(x: transform.origin.x + transform.renderedSize.width / 2,
+                      y: transform.origin.y + transform.renderedSize.height / 2)
+        }.clipped()
+    }
+}
+
 struct NormalizedOverlayDrawing: View {
     let layers: [OverlayLayer]
     let landmarks: [LandmarkPath]
@@ -115,6 +170,8 @@ struct OverlayView: View {
     @State private var savedScale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var savedOffset: CGSize = .zero
+    @State private var focusRegion: CGRect?
+    @State private var showsLegend = true
 
     private var selectedLayer: OverlayLayer? {
         report.overlays.first { $0.id == selectedLayerID }
@@ -152,7 +209,7 @@ struct OverlayView: View {
                     Button("完成") { dismiss() }.foregroundStyle(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { resetZoom() } label: { Image(systemName: "arrow.counterclockwise") }
+                    Button { focusRegion = nil; resetZoom() } label: { Image(systemName: "arrow.counterclockwise") }
                         .foregroundStyle(.white).accessibilityLabel("重置缩放与位置")
                 }
             }
@@ -167,10 +224,13 @@ struct OverlayView: View {
 
     private var zoomablePhoto: some View {
         GeometryReader { proxy in
-            let photo = ReportPhotoView(report: report, image: store.image(for: report),
-                                        layers: showOverlay ? selectedLayer.map { [$0] } ?? [] : [],
-                                        showsLandmarks: showOverlay && showLandmarks)
-            let fitted = photo.aspectFitSize(in: proxy.size)
+            let photo = FocusedReportPhotoView(report: report, image: store.image(for: report),
+                layers: showOverlay ? selectedLayer.map { [$0] } ?? [] : [],
+                landmarks: showOverlay && showLandmarks ? report.landmarks : [], region: focusRegion)
+            let transform = ReportPhotoTransform(
+                imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
+                viewport: proxy.size, region: focusRegion ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+            let fitted = transform.renderedSize
             ZStack {
                 Color.clear
                 photo
@@ -207,9 +267,9 @@ struct OverlayView: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let layer = selectedLayer, showOverlay {
-                VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 10) {
+            if let layer = selectedLayer, showOverlay, showsLegend {
+                VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
                         Circle().fill(Color(hex: layer.colorHex)).frame(width: 7, height: 7)
                         Text(layer.title).font(.caption.weight(.semibold))
@@ -217,9 +277,11 @@ struct OverlayView: View {
                         Text(report.isSample ? "演示图层" : "照片外观参考")
                             .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
                     }.foregroundStyle(RuyuanStyle.ink)
-                    Text(layer.note).font(.caption2).lineSpacing(3).foregroundStyle(RuyuanStyle.muted)
-                        .lineLimit(3)
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(layer.note).font(.system(size: 10)).lineSpacing(2).foregroundStyle(RuyuanStyle.muted)
+                        .lineLimit(2)
+                    Text("来源：\(report.isSample ? "原创演示" : layer.source)")
+                        .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted).lineLimit(1)
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.white, in: RoundedRectangle(cornerRadius: 16))
             }
             Picker("显示模式", selection: $showOverlay) {
@@ -232,13 +294,13 @@ struct OverlayView: View {
                     HStack(spacing: 8) {
                         ForEach(report.overlays) { layer in
                             Button {
-                                selectedLayerID = layer.id; showOverlay = true; showLandmarks = false
+                                selectedLayerID = layer.id; showOverlay = true; showLandmarks = false; focusRegion = nil
                                 resetZoom()
                             } label: {
                                 HStack(spacing: 5) {
                                     Circle().fill(Color(hex: layer.colorHex)).frame(width: 5, height: 5)
-                                    Text(layer.title).font(.caption2)
-                                }.padding(.horizontal, 11).padding(.vertical, 9)
+                                    Text(layer.title).font(.system(size: 10))
+                                }.padding(.horizontal, 10).padding(.vertical, 8)
                                     .foregroundStyle(.white)
                                     .background(selectedLayerID == layer.id ? RuyuanStyle.purple : .white.opacity(0.12), in: Capsule())
                             }.buttonStyle(.plain)
@@ -248,6 +310,17 @@ struct OverlayView: View {
                 }
             }
             HStack(spacing: 10) {
+                Button {
+                    if focusRegion != nil { focusRegion = nil }
+                    else if let layer = selectedLayer {
+                        focusRegion = ReportPhotoTransform.region(points: layer.paths.flatMap { $0 })
+                    }
+                    resetZoom()
+                } label: { Label(focusRegion == nil ? "局部" : "全图", systemImage: "viewfinder") }
+                    .font(.caption2).disabled(selectedLayer == nil && focusRegion == nil)
+                    .accessibilityIdentifier("overlayFocusToggle")
+                Button { showsLegend.toggle() } label: { Image(systemName: showsLegend ? "info.circle.fill" : "info.circle") }
+                    .accessibilityLabel(showsLegend ? "收起图例" : "显示图例")
                 if !report.landmarks.isEmpty {
                     Button {
                         showLandmarks.toggle()
@@ -263,18 +336,14 @@ struct OverlayView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.6))
                 Button { stepZoom(-0.5) } label: { Image(systemName: "minus.magnifyingglass") }
+                    .accessibilityIdentifier("overlayZoomOut")
                     .accessibilityLabel("缩小图像").frame(width: 34, height: 36)
                 Button { stepZoom(0.5) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .accessibilityIdentifier("overlayZoomIn")
                     .accessibilityLabel("放大图像").frame(width: 34, height: 36)
             }
             .foregroundStyle(Color(hex: "E4D1F0"))
-            if let layer = selectedLayer, showOverlay {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("来源：\(report.isSample ? "原创矢量交互示例" : layer.source)")
-                        .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            } else if report.landmarks.isEmpty && report.overlays.isEmpty {
+            if report.landmarks.isEmpty && report.overlays.isEmpty {
                 Text("此报告未提供可显示的特征点或图层。")
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
             } else if selectedLayer == nil && !showLandmarks {
@@ -285,7 +354,7 @@ struct OverlayView: View {
                 .font(.caption2).foregroundStyle(.white.opacity(0.45))
                 .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 20).padding(.vertical, 18)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(.black)
     }
 

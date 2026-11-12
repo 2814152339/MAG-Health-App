@@ -73,9 +73,10 @@ struct RootView: View {
                 showAssessment = false
             })
         }
-        .sheet(item: $store.activeReport) { report in
+        .fullScreenCover(item: $store.activeReport) { report in
             NavigationStack {
                 ReportView(report: report)
+                    .toolbar(.visible, for: .navigationBar)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("完成") { store.activeReport = nil }
@@ -94,7 +95,15 @@ struct RootView: View {
         .alert("请留意", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .task { await store.resumePendingAnalysis() }
+        .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-scan") {
+                store.beginUITestScan()
+                return
+            }
+            #endif
+            await store.resumePendingAnalysis()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await store.resumePendingAnalysis() } }
         }

@@ -32,9 +32,9 @@ struct ReportView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(report.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2).foregroundStyle(RuyuanStyle.muted).frame(maxWidth: .infinity)
+                    .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted).frame(maxWidth: .infinity)
                 privatePhotoMessage
                 assistantMessage
                 if report.isSample { sampleNotice }
@@ -46,7 +46,7 @@ struct ReportView: View {
                 Text("仅作外观记录与养护参考，不替代皮肤科诊断。不同光线、表情和拍摄角度会影响结果。")
                     .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4).padding(.horizontal, 4)
             }
-            .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
+            .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 26)
         }
         .background(RuyuanStyle.background)
         .navigationTitle(report.isSample ? "演示报告" : "如愿 · 测肤记录")
@@ -89,7 +89,7 @@ struct ReportView: View {
                 VStack(spacing: 7) {
                     ZStack(alignment: .topTrailing) {
                         ReportPhotoView(report: report, image: store.image(for: report))
-                            .frame(width: 90, height: 112).blur(radius: 12)
+                            .frame(width: 76, height: 76).blur(radius: 12)
                             .overlay(Color.black.opacity(0.12))
                             .overlay {
                                 VStack(spacing: 5) {
@@ -114,18 +114,17 @@ struct ReportView: View {
 
     private var assistantMessage: some View {
         HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "sparkle").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
-                .frame(width: 28, height: 28).background(.white, in: Circle())
             Text("已为你整理这次的肤况观察，具体结果如下。")
-                .font(.subheadline).lineSpacing(4).foregroundStyle(RuyuanStyle.ink)
-                .padding(15).background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 18))
+                .font(.system(size: 12)).lineSpacing(4).foregroundStyle(RuyuanStyle.ink)
+                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
         }
     }
 
     private var sampleNotice: some View {
         Label("这是一份演示报告。分数、比例与图层均为示例，不代表你或任何真实人物的检测结果。", systemImage: "info.circle")
-            .font(.caption).foregroundStyle(RuyuanStyle.purple).lineSpacing(3)
-            .padding(13).frame(maxWidth: .infinity, alignment: .leading)
+            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.purple).lineSpacing(3)
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 14))
     }
 
@@ -154,7 +153,7 @@ struct ReportView: View {
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(RuyuanStyle.muted)
                     }
-                    .foregroundStyle(RuyuanStyle.ink).padding(.vertical, 15)
+                    .foregroundStyle(RuyuanStyle.ink).padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).accessibilityIdentifier("dimension-\(dimension.rawValue)")
@@ -167,7 +166,7 @@ struct ReportView: View {
             }
             .buttonStyle(.plain).padding(.top, 10).accessibilityIdentifier("openReportDetails")
         }
-        .padding(18).background(.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 22))
+        .padding(14).background(.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var careSuggestions: some View {
@@ -232,10 +231,10 @@ struct ReportView: View {
                 Button { toggleFeedback("dislike") } label: {
                     Image(systemName: feedbackChoice == "dislike" ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                 }.accessibilityLabel("这份报告需要改进")
-                Button("补充反馈") { sheet = .feedback }.font(.caption)
+                Button("补充反馈") { sheet = .feedback }.font(.caption).accessibilityIdentifier("reportFeedbackNote")
                 Spacer()
                 Button(action: exportPDF) { Label("分享", systemImage: "square.and.arrow.up") }
-                    .font(.caption).accessibilityLabel("分享 PDF 报告")
+                    .font(.caption).accessibilityLabel("分享 PDF 报告").accessibilityIdentifier("shareReportPDF")
             }.foregroundStyle(RuyuanStyle.purple).padding(.vertical, 5)
             if feedbackSaved {
                 Text("反馈已保存在本机，不会自动上传。")
@@ -299,12 +298,12 @@ private func dimensionDescription(_ dimension: SkinDimension) -> String {
 private struct ReportSummaryCard: View {
     let report: AnalysisReport
     var body: some View {
-        RuyuanCard(padding: 19) {
-            VStack(alignment: .leading, spacing: 17) {
+        RuyuanCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 13) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(report.isSample ? "认真养肤 · 示例" : "认真养肤，慢慢变好")
-                            .font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+                            .font(.system(size: 17, weight: .semibold)).foregroundStyle(RuyuanStyle.ink)
                         Text(report.assessment?.typeTitle ?? (report.isSample ? "肤况示例" : "单次照片外观记录"))
                             .font(.caption).foregroundStyle(RuyuanStyle.muted)
                         if let age = report.assessment?.age {
@@ -319,7 +318,7 @@ private struct ReportSummaryCard: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Text("总体结论").font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
                     Text(report.summary.isEmpty ? "本报告未提供总体文字结论，可查看已提供的分项。" : report.summary)
-                        .font(.caption).lineSpacing(6).foregroundStyle(RuyuanStyle.muted)
+                        .font(.caption).lineSpacing(4).foregroundStyle(RuyuanStyle.muted)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 if report.totalScore == nil {
@@ -343,7 +342,7 @@ private struct ReportSummaryCard: View {
                 Text(reportScore(report.totalScore)).font(.system(size: 20, weight: .semibold, design: .rounded))
                 Text(report.isSample ? "演示" : "参考").font(.system(size: 9))
             }.foregroundStyle(RuyuanStyle.purple)
-        }.frame(width: 66, height: 66).padding(3)
+        }.frame(width: 54, height: 54).padding(3)
         .accessibilityLabel("综合参考分 \(reportScore(report.totalScore))")
     }
 }
@@ -358,12 +357,18 @@ private struct ReportDetailSheet: View {
     @State private var inspection: InspectionTarget?
     private var metric: SkinMetric? { report.skin.first { $0.dimension == selectedDimension } }
 
+    init(report: AnalysisReport, initialDimension: SkinDimension) {
+        self.report = report
+        self.initialDimension = initialDimension
+        _selectedDimension = State(initialValue: initialDimension)
+    }
+
     var body: some View {
         NavigationStack {
           VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("皮肤质量解读结果").font(.headline).foregroundStyle(RuyuanStyle.ink)
+                    Text("皮肤质量解读结果").font(.system(size: 16, weight: .semibold)).foregroundStyle(RuyuanStyle.ink)
                     Text(report.isSample ? "交互演示 · 不是真实检测" : "照片外观与肤感参考分析")
                         .font(.caption2).foregroundStyle(RuyuanStyle.muted)
                 }
@@ -373,9 +378,10 @@ private struct ReportDetailSheet: View {
                         .foregroundStyle(RuyuanStyle.muted).frame(width: 30, height: 30)
                         .background(.white.opacity(0.65), in: Circle())
                 }.accessibilityLabel("关闭报告详情")
-            }.padding(.horizontal, 19).padding(.top, 20).padding(.bottom, 16)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
+            }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
+            ScrollViewReader { reader in
+              ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
                     ReportSummaryCard(report: report)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
@@ -383,7 +389,7 @@ private struct ReportDetailSheet: View {
                             Text("综合参考分").font(.subheadline.weight(.semibold))
                             Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
                         }
-                        SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 225)
+                        SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 205)
                     }.padding(.horizontal, 6)
                     Section {
                         dimensionContent
@@ -391,12 +397,20 @@ private struct ReportDetailSheet: View {
                         if !report.overlays.isEmpty { allLayerGallery }
                         qualityContent
                     } header: { dimensionTabs }
-                }.padding(.horizontal, 18).padding(.bottom, 28)
+                    .id("reportDimensionSection")
+                }.padding(.horizontal, 14).padding(.bottom, 28)
+              }
+              .onChange(of: selectedDimension) { _, _ in
+                  // A tab switch must not retain the previous dimension's long
+                  // scroll offset (which used to hide the next title/chart).
+                  withAnimation(.easeInOut(duration: 0.25)) {
+                      reader.scrollTo("reportDimensionSection", anchor: .top)
+                  }
+              }
             }
         }
         .background(RuyuanStyle.background).accessibilityIdentifier("reportDetailSheet")
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { selectedDimension = initialDimension }
         .fullScreenCover(item: $inspection) { target in
             OverlayView(report: report, initialLayerID: target.layerID)
         }
@@ -409,11 +423,11 @@ private struct ReportDetailSheet: View {
                 let value = report.skin.first { $0.dimension == dimension }
                 Button { withAnimation(.easeInOut(duration: 0.2)) { selectedDimension = dimension } } label: {
                     VStack(spacing: 4) {
-                        Text(dimension.title).font(.system(size: 12, weight: .medium))
+                        Text(dimension.title).font(.system(size: 11, weight: .medium))
                         Text(value?.score == nil ? "未评分" : "\(reportScore(value?.score))分")
                             .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                     }
-                    .frame(maxWidth: .infinity).padding(.vertical, 11)
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
                     .foregroundStyle(selectedDimension == dimension ? RuyuanStyle.purple : RuyuanStyle.ink)
                     .background(.white.opacity(selectedDimension == dimension ? 1 : 0.6), in: RoundedRectangle(cornerRadius: 12))
                     .overlay {
@@ -424,7 +438,9 @@ private struct ReportDetailSheet: View {
                 .buttonStyle(.plain).accessibilityIdentifier("detail-tab-\(dimension.rawValue)")
                 .accessibilityAddTraits(selectedDimension == dimension ? .isSelected : [])
             }
-        }.padding(.vertical, 9).background(RuyuanStyle.background)
+        }.padding(.vertical, 7).background(RuyuanStyle.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reportDimensionTabs")
     }
 
     private var dimensionContent: some View {
@@ -439,14 +455,25 @@ private struct ReportDetailSheet: View {
             Text(metric?.status ?? "本报告未提供该维度的结果")
                 .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4)
             if let source = metric?.scoreSource {
-                Text(source == "selfReport" ? "自评参考分 · 来自本人回答" : source == "photoHeuristic" ? "照片外观参考分 · 非仪器测量" : source)
+                Text(source == "selfReport" ? "自评参考分 · 来自本人回答" : source == "photoHeuristic" ? "照片外观参考分 · 非仪器测量" : "分析参考分 · 具体定义见来源")
                     .font(.system(size: 10)).foregroundStyle(RuyuanStyle.purple)
             }
             if let metric, !metric.items.isEmpty {
-                ForEach(Array(metric.items.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(metric.items.filter { !$0.id.hasSuffix("-formula") }.enumerated()), id: \.element.id) { index, item in
                     detailItem(item, index: index)
                 }
                 if selectedDimension == .aging { regionalLineChart(metric.items) }
+                if metric.items.contains(where: { $0.id.hasSuffix("-formula") }) {
+                    DisclosureGroup("参考分计算依据") {
+                        ForEach(metric.items.filter { $0.id.hasSuffix("-formula") }) { item in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(item.valueText).font(.caption.weight(.medium))
+                                Text(item.note).font(.caption2).lineSpacing(4).textSelection(.enabled)
+                            }.padding(.top, 9)
+                        }
+                    }.font(.caption).foregroundStyle(RuyuanStyle.muted).padding(14)
+                        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
+                }
             } else {
                 RuyuanCard(padding: 16) {
                     Text("本维度尚无可用分项，不以示例数据补齐。可继续查看原图与其他已有结果。")
@@ -490,6 +517,8 @@ private struct ReportDetailSheet: View {
             Text("仅为照片中纹理响应的区域覆盖率，不是皱纹根数或临床严重程度。缺失项不补值。")
                 .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted).lineSpacing(3)
         }.padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("regionalLineChart")
     }
 
     private func detailItem(_ item: SkinItem, index: Int) -> some View {
@@ -514,11 +543,46 @@ private struct ReportDetailSheet: View {
                 }
                 Text(explanation(for: item)).font(.caption).lineSpacing(5).foregroundStyle(RuyuanStyle.ink)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                itemIndicator(item)
                 if !report.isSample && report.modelVersion.contains(AppearanceAnalyzer.version) {
                     DisclosureGroup("计算依据与来源") {
                         Text(item.note).font(.caption2).foregroundStyle(RuyuanStyle.muted).lineSpacing(4).padding(.top,6).textSelection(.enabled)
                     }.font(.caption2).tint(RuyuanStyle.purple)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func itemIndicator(_ item: SkinItem) -> some View {
+        if let assessment = report.assessment,
+           ["self-dryness", "self-oiliness", "self-reactivity"].contains(item.id) {
+            let selected = item.id == "self-dryness" ? assessment.dryness : item.id == "self-oiliness" ? assessment.oiliness : assessment.reactivity
+            VStack(alignment: .leading, spacing: 7) {
+                Text("本人自述频率").font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
+                HStack(spacing: 4) {
+                    ForEach(SkinSelfAssessment.frequency.indices, id: \.self) { index in
+                        VStack(spacing: 5) {
+                            Capsule().fill(index == selected ? RuyuanStyle.purple : RuyuanStyle.lilac).frame(height: 4)
+                            Text(SkinSelfAssessment.frequency[index]).font(.system(size: 9))
+                                .foregroundStyle(index == selected ? RuyuanStyle.purple : RuyuanStyle.muted)
+                        }.frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        } else if (["highlight", "pigment-candidates", "redness", "pore-candidates"].contains(item.id) || item.id.hasPrefix("line-")),
+                  let range = item.valueText.range(of: #"[0-9]+(?:\.[0-9]+)?(?=\s*%)"#, options: .regularExpression),
+                  let percentage = Double(item.valueText[range]), percentage.isFinite, (0...100).contains(percentage) {
+            VStack(alignment: .leading, spacing: 5) {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(RuyuanStyle.lilac)
+                        Capsule().fill(RuyuanStyle.purple.opacity(0.65))
+                            .frame(width: proxy.size.width * CGFloat(percentage / 100))
+                    }
+                }.frame(height: 4)
+                Text("本图覆盖率 \(String(format: "%.1f", percentage))% · 不是严重程度分级")
+                    .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
             }
         }
     }
@@ -574,17 +638,16 @@ private struct ReportDetailSheet: View {
     }
 
     private var geometryContent: some View {
-        RuyuanCard(padding: 16) {
+        RuyuanCard(padding: 14) {
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 16) {
-                    if !report.isSample {
-                        NavigationLink {
-                            FaceCalibrationView(report: report).toolbar(.visible, for: .navigationBar)
-                        } label: {
-                            Label("发际线与尺寸标定", systemImage: "ruler")
-                                .font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
-                        }
+                    NavigationLink {
+                        FaceCalibrationView(report: report).toolbar(.visible, for: .navigationBar)
+                    } label: {
+                        Label(report.isSample ? "标定工具示例（不保存）" : "发际线与尺寸标定", systemImage: "ruler")
+                            .font(.caption.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
                     }
+                    .accessibilityIdentifier("openCalibrationTools")
                     Button {
                         inspection = InspectionTarget(layerID: report.overlays.first { $0.id.hasPrefix("geometry-") }?.id)
                     } label: {
@@ -607,12 +670,12 @@ private struct ReportDetailSheet: View {
                 Label("面部比例与几何", systemImage: "face.dashed")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
             }
+            .accessibilityIdentifier("reportGeometryTools")
         }
     }
 
     private var allLayerGallery: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("本次全部图层").font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+        DisclosureGroup {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(report.overlays) { layer in
@@ -623,8 +686,12 @@ private struct ReportDetailSheet: View {
                         }
                     }
                 }
-            }
+            }.padding(.top, 12)
+        } label: {
+            Label("本次全部图层", systemImage: "square.3.layers.3d")
+                .font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.ink)
         }
+        .padding(14).background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var qualityContent: some View {
@@ -735,6 +802,7 @@ private struct ReportFeedbackEditor: View {
             VStack(alignment: .leading, spacing: 15) {
                 Text("哪部分有帮助，或想改进？").font(.headline)
                 TextEditor(text: $note).padding(9).frame(minHeight: 100)
+                    .accessibilityIdentifier("reportFeedbackEditor")
                     .scrollContentBackground(.hidden).background(.white, in: RoundedRectangle(cornerRadius: 15))
                 Label("反馈仅保存在这台设备，不会自动发往服务器。", systemImage: "lock.shield")
                     .font(.caption).foregroundStyle(RuyuanStyle.muted)
@@ -752,7 +820,11 @@ private struct ReportFeedbackEditor: View {
 private struct ReportShareSheet: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        controller.loadViewIfNeeded()
+        controller.view.accessibilityIdentifier = "reportShareSheet"
+        controller.view.accessibilityContainerType = .semanticGroup
+        return controller
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

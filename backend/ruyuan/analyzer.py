@@ -167,12 +167,11 @@ def analyze(path: Path, settings: Settings, progress: Callable[[str, float], Non
         {"id": "one_face", "title": "单人脸", "passed": True, "detail": "MediaPipe检测到一张人脸。"},
         {"id": "size", "title": "面部占比", "passed": face_coverage >= 0.25,
          "detail": f"脸宽约占图像宽度 {face_coverage * 100:.0f}%；建议更近距离拍摄。"},
-        {"id": "lighting", "title": "整体曝光", "passed": 55 <= luminance.mean() <= 215,
+        {"id": "lighting", "title": "整体曝光", "passed": bool(55 <= luminance.mean() <= 215),
          "detail": "仅检查图像平均亮度，不校准色彩。"},
         {"id": "pose", "title": "正面姿态提示", "passed": nose_offset < 0.15,
          "detail": "以鼻点和外眼角的二维偏移作粗略提示，不是已标定三维姿态。"},
     ]
-    progress("report_render", 0.9)
     # Fingerprint the explicitly supplied model, not a fabricated version label.
     model_digest = hashlib.sha256(model.read_bytes()).hexdigest()[:12]
     report = {"id": "", "createdAt": utc_now(), "origin": "server", "status": "partial",
@@ -180,4 +179,19 @@ def analyze(path: Path, settings: Settings, progress: Callable[[str, float], Non
               "geometry": geometry, "skin": skin, "landmarks": paths, "overlays": overlays,
               "quality": quality, "modelVersion": f"MediaPipe-{mp.__version__}-face-task-{model_digest};pixel-proxies-v1",
               "summary": "已完成真实人脸关键点、二维比例和双颊亮度/颜色观察。五项皮肤临床分数均未测量；本报告不用于诊断、治疗决策或审美打分。"}
+    if settings.skin_models_dir is not None:
+        from .trained_skin import augment_report, classify
+        min_x, max_x = min(p["x"] for p in pts), max(p["x"] for p in pts)
+        min_y, max_y = min(p["y"] for p in pts), max(p["y"] for p in pts)
+        margin_x, margin_y = (max_x-min_x)*0.025, (max_y-min_y)*0.025
+        crop = (max(0.0,min_x-margin_x),max(0.0,min_y-margin_y),min(1.0,max_x+margin_x),min(1.0,max_y+margin_y))
+        bounds = (int(crop[0]*width),int(crop[1]*height),max(1,int(crop[2]*width)),max(1,int(crop[3]*height)))
+        observations = classify(Image.fromarray(rgb).crop(bounds), settings.skin_models_dir,
+                                progress=lambda step: progress("skin_models", 0.70+step*0.045))
+        if settings.skin_models_required and any(o["state"] != "ready" or "label" not in o for o in observations):
+            raise AnalysisFailure("skin_models_unavailable")
+        report = augment_report(report, observations, crop=crop)
+    elif settings.skin_models_required:
+        raise AnalysisFailure("skin_models_unavailable")
+    progress("report_render", 0.95)
     return AnalysisReport.model_validate(report).model_dump()

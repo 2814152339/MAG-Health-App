@@ -78,7 +78,9 @@ struct HomeView: View {
             ZStack {
                 Circle().fill(.white.opacity(0.5)).frame(width:compact ? 155 : 250,height:compact ? 155 : 250).offset(y:compact ? 10 : 22)
                 Circle().stroke(.white.opacity(0.9),lineWidth:compact ? 8 : 12).frame(width:compact ? 150 : 230,height:compact ? 170 : 270).offset(y:compact ? 8 : 15)
-                SampleFaceDiagram(showsGuides:true).frame(width:compact ? 125 : 200,height:compact ? 175 : 280)
+                Image("SkinHero3D").resizable().scaledToFit()
+                    .frame(width: compact ? 182 : 260, height: compact ? 205 : 290)
+                    .accessibilityLabel("原创三维风格肤质示意，不是真实检测照片")
                 Text("检测肤质").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? -70 : -90,y:compact ? -20 : -30)
                 Text("面部比例分析").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? 63 : 75,y:compact ? -54 : -83)
                 Text("皮肤外观评估").font(compact ? .system(size: 10) : .caption).foregroundStyle(RuyuanStyle.muted).padding(compact ? 6 : 8).background(.white.opacity(0.86),in:Capsule()).offset(x:compact ? 58 : 65,y:compact ? 49 : 75)
@@ -97,24 +99,29 @@ struct HomeView: View {
     }
 
     private var captureActions: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 6) {
             Button(action: onCapture) {
                 HStack(spacing: 10) {
                     Image(systemName: "camera")
                     Text("开始检测")
                     Image(systemName: "arrow.right").font(.subheadline)
                 }
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                .padding(.vertical, 13).frame(maxWidth: .infinity)
+                .background(RuyuanStyle.purple, in: Capsule()).contentShape(Capsule())
             }
-            .buttonStyle(RuyuanPrimaryButtonStyle())
+            .buttonStyle(.plain)
             .accessibilityIdentifier("startCaptureButton")
             Button(action: onImport) {
                 Label("从相册选择照片", systemImage: "photo.on.rectangle")
+                    .font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
+                    .padding(.vertical, 6).frame(maxWidth: .infinity).contentShape(Rectangle())
             }
-            .buttonStyle(RuyuanSecondaryButtonStyle())
+            .buttonStyle(.plain)
             .accessibilityIdentifier("importPhotoButton")
             Label(store.serverEnabled ? "已选择服务端分析 · 照片将在同意后上传" : "默认本机处理 · 服务端上传由你决定",
                   systemImage: "lock.shield")
-                .font(.caption).foregroundStyle(RuyuanStyle.muted)
+                .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                 .padding(.top, 3)
                 .frame(maxWidth: .infinity)
         }
