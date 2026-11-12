@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "revision": "79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83",
+  "sourceSHA256": "c58a6af6fb622d916e4aa788d9f620d59df4a42209f655ce4a9db49686c05697",
+  "input": {
+    "width": 256,
+    "height": 256,
+    "colorRGB": [
+      182,
+      137,
+      111
+    ]
+  },
+  "probes": [
+    {
+      "x": 0,
+      "y": 0,
+      "probability": 0.0030212453566491604
+    },
+    {
+      "x": 128,
+      "y": 0,
+      "probability": 0.002601821208372712
+    },
+    {
+      "x": 255,
+      "y": 0,
+      "probability": 0.0036755776964128017
+    },
+    {
+      "x": 0,
+      "y": 128,
+      "probability": 0.00040843075839802623
+    },
+    {
+      "x": 128,
+      "y": 128,
+      "probability": 2.3419243007083423e-05
+    },
+    {
+      "x": 255,
+      "y": 128,
+      "probability": 0.0008299247710965574
+    },
+    {
+      "x": 0,
+      "y": 255,
+      "probability": 0.003016282804310322
+    },
+    {
+      "x": 128,
+      "y": 255,
+      "probability": 0.000286798836896196
+    },
+    {
+      "x": 255,
+      "y": 255,
+      "probability": 0.003550664521753788
+    }
+  ],
+  "thresholdCounts": [
+    {
+      "threshold": 0.2,
+      "candidatePixels": 0
+    },
+    {
+      "threshold": 0.5,
+      "candidatePixels": 0
+    }
+  ],
+  "meaning": "Fixed original-weight PyTorch fixture; no skin accuracy or clinical meaning."
+}

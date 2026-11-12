@@ -192,6 +192,7 @@ struct LocalAnalyzer {
         }
 
         let pores = try PoreNetService.analyze(image: cgImage, faceBox: box, landmarks: lookup, segmentation: segmentation)
+        let acne = try AcneSegmentationService.analyze(image: cgImage, faceBox: box, landmarks: lookup, segmentation: segmentation)
         let classifications = try SkinClassifierService.classify(image: cgImage, faceBox: box)
         progress(.report)
         try Task.checkCancellation()
@@ -206,7 +207,9 @@ struct LocalAnalyzer {
                 + (denseLandmarks != nil ? "; " + FaceLandmarkService.source : "; dense model unavailable"),
             summary: segmentationNote + detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
         )
-        var combined = PoreNetService.applying(pores, to: SkinClassifierService.applying(classifications, to: report))
+        let withClassifications = SkinClassifierService.applying(classifications, to: report)
+        let withPores = PoreNetService.applying(pores, to: withClassifications)
+        var combined = AcneSegmentationService.applying(acne, to: withPores)
         if combined.quality.contains(where: { !$0.passed }) { combined.status = "已完成 · 有质量或模型提示" }
         return combined
     }

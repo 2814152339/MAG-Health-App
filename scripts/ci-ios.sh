@@ -90,6 +90,7 @@ fi
 run_logged verify-segmentation-model python3 scripts/setup_segmentation_model.py --check
 run_logged verify-face-landmarker-model python3 scripts/setup_face_landmarker_model.py --check
 run_logged verify-pore-net-model python3 scripts/setup_pore_net_model.py --check
+run_logged verify-acne-segmentation-model python3 scripts/setup_acne_segmentation_model.py --check
 if [[ -f docs/models/coreml-artifacts.json ]]; then
   run_logged install-classifier-models python3 scripts/install_coreml_artifacts.py
   run_logged verify-classifier-models python3 scripts/install_coreml_artifacts.py --check

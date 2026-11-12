@@ -72,7 +72,7 @@ struct ReportView: View {
                     feedbackNote = note; saveFeedback(); sheet = nil
                 }
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
-            case .export(let url): ReportShareSheet(url: url)
+            case .export(let url): ReportShareSheet(url: url) { sheet = nil }
             }
         }
         .alert("暂时无法导出", isPresented: Binding(
@@ -383,7 +383,6 @@ private struct ReportDetailSheet: View {
               ScrollViewReader { reader in
               ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
-                    ReportSummaryCard(report: report)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             Image(systemName: "atom").foregroundStyle(RuyuanStyle.purple)
@@ -622,7 +621,7 @@ private struct ReportDetailSheet: View {
                     }
                 }
             }
-        } else if (["highlight", "pigment-candidates", "redness", "pore-candidates", "trained-pore-net"].contains(item.id) || item.id.hasPrefix("line-")),
+        } else if (["highlight", "pigment-candidates", "redness", "pore-candidates", "trained-pore-net", "trained-acne-segmentation"].contains(item.id) || item.id.hasPrefix("line-")),
                   let range = item.valueText.range(of: #"[0-9]+(?:\.[0-9]+)?(?=\s*%)"#, options: .regularExpression),
                   let percentage = Double(item.valueText[range]), percentage.isFinite, (0...100).contains(percentage) {
             VStack(alignment: .leading, spacing: 5) {
@@ -633,13 +632,25 @@ private struct ReportDetailSheet: View {
                             .frame(width: proxy.size.width * CGFloat(percentage / 100))
                     }
                 }.frame(height: 4)
-                Text("\(item.id == "trained-pore-net" ? "有效面皮模型候选覆盖率" : "有效采样区覆盖率") \(String(format: "%.1f", percentage))% · 不是严重程度分级")
+                Text("\(["trained-pore-net", "trained-acne-segmentation"].contains(item.id) ? "有效面皮模型候选覆盖率" : "有效采样区覆盖率") \(String(format: "%.1f", percentage))% · 不是严重程度分级")
                     .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
             }
         }
     }
 
     private func explanation(for item:SkinItem)->String {
+        if ["trained-acne-segmentation", "trained-acne-segmentation-pixels", "trained-acne-segmentation-components"].contains(item.id) {
+            if item.id == "trained-acne-segmentation-pixels" {
+                return "分子是二值痘相关模型的候选像素，分母是256×256模型网格中与可靠语义面皮相交并排除五官后的有效皮肤像素，不是整张照片的像素、物理面积或痘痘数量。"
+            }
+            if item.id == "trained-acne-segmentation-components" {
+                return "全量候选像素按8邻接连通性组成片区，相邻候选可能合并，单一区域也可能分裂；片区数不等于痘痘或病灶个数。图层最多显示300块来自真实掩膜的矩形，显示上限不截断全量统计。"
+            }
+            if item.valueText.contains("%") {
+                return "二值像素模型在可靠面部皮肤区域标出痘相关候选。比例是模型候选像素面积占有效面皮像素的比例，不是准确率、临床严重度、痘痘分型或真实痘数。可点击缩略图核对实际掩膜与原图；网格边缘不是精确皮损边界。"
+            }
+            return "本次没有可靠的专项像素模型结果，保留实际原因。不以原有启发式细点、整脸分类概率或零值冒充候选掩膜。"
+        }
         if item.id.hasPrefix("trained-pore-net") {
             if item.id == "trained-pore-net-pixels" {
                 return "分子是专项模型的候选像素，分母是通过真实语义分割与五官排除的有效面部皮肤像素，不是整张图片的像素或物理尺寸。"
@@ -894,8 +905,15 @@ private struct ReportFeedbackEditor: View {
 
 private struct ReportShareSheet: UIViewControllerRepresentable {
     let url: URL
+    let onDismiss: () -> Void
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        let finish = onDismiss
+        // Keep SwiftUI's presentation binding in sync with UIKit's completion
+        // and cancellation, including the system share header's Close action.
+        controller.completionWithItemsHandler = { _, _, _, _ in
+            DispatchQueue.main.async { finish() }
+        }
         controller.loadViewIfNeeded()
         controller.view.accessibilityIdentifier = "reportShareSheet"
         controller.view.accessibilityContainerType = .semanticGroup

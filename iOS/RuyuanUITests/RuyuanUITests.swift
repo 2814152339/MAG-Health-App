@@ -196,10 +196,17 @@ final class RuyuanUITests: XCTestCase {
         let reportFileName = sharePanel.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "ruyuan-demo-v1")).firstMatch
         XCTAssertTrue(reportFileName.exists, "The exported file must belong to the actual sample report.")
         capture("share-pdf", app: app)
-        let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"])).allElementsBoundByIndex.first { $0.isHittable }
-        if let close { close.tap() } else { sharePanel.swipeDown() }
+        // The remote share controller exposes an actual header button. A
+        // global label-IN query missed it on iOS 18, and dragging the header
+        // was not a dismissal. Exercise the normal, observed Close control.
+        let close = sharePanel.buttons["header.closeButton"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "The native PDF share controller must expose its Close button.")
+        XCTAssertTrue(waitUntil { close.isHittable })
+        close.tap()
         XCTAssertTrue(waitUntil { !sharePanel.exists }, "The system share sheet must dismiss back to the report.")
         XCTAssertTrue(identified("reportOverview", in: app).exists)
+        XCTAssertTrue(waitUntil { share.isHittable }, "Dismissing the system controller must also remove its modal host and restore the actual report controls.")
+        capture("share-dismissed", app: app)
     }
 
     func testSyntheticScannerScenesPlaybackAndSkip() {

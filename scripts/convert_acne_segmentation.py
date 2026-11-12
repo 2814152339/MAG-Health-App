@@ -33,6 +33,15 @@ def digest(path):
     return result.hexdigest()
 
 
+def parity_failure(output, receipt, message):
+    """Keep collected numerical evidence when a conversion gate rejects output."""
+    receipt['state'] = 'parity_failed'
+    receipt['validation']['failure'] = message
+    (output/'AcneSegmentation-resource-manifest.json').write_text(
+        json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+    raise ValueError(message)
+
+
 def checked_sources(folder, download):
     source = json.loads(SOURCE.read_text(encoding='utf-8'))
     if source['revision'] != '79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83':
@@ -148,7 +157,9 @@ def run(folder, output, download=False, preflight=False):
     for name,frame,_,original in expected:
         actual = np.asarray(delivered.predict({'image':frame})['acneProbability'],dtype=np.float32)
         if actual.shape != (1,1,256,256) or not np.isfinite(actual).all() or actual.min()<0 or actual.max()>1:
-            raise ValueError('acne_coreml_runtime_shape_or_probability_failed')
+            receipt['validation']['invalidRuntimeOutput'] = {'name':name,'shape':list(actual.shape),
+                'finitePixels':int(np.isfinite(actual).sum()),'totalPixels':int(actual.size)}
+            parity_failure(output,receipt,'acne_coreml_runtime_shape_or_probability_failed')
         error = np.abs(actual-original)
         sample = {'name':name,'shape':list(actual.shape),'maxAbsoluteProbabilityError':float(error.max()),
                   'meanAbsoluteProbabilityError':float(error.mean()),'thresholds':[]}
@@ -159,9 +170,9 @@ def run(folder, output, download=False, preflight=False):
                                         'torchCandidatePixels':int((original>threshold).sum()),
                                         'coremlCandidatePixels':int((actual>threshold).sum())})
             if fraction > MAX_MASK_DISAGREEMENT:
-                receipt['state']='parity_failed'; raise ValueError('acne_coreml_threshold_mask_parity_failed')
+                parity_failure(output,receipt,'acne_coreml_threshold_mask_parity_failed')
         if float(error.max()) > MAX_PROBABILITY_ERROR:
-            receipt['state']='parity_failed'; raise ValueError('acne_coreml_pixel_probability_parity_failed')
+            parity_failure(output,receipt,'acne_coreml_pixel_probability_parity_failed')
     receipt['state'] = 'converted_and_coreml_cpu_verified'
     receipt['validation']['meaning'] = 'CPU format-conversion parity only; no independent selfie accuracy or IoU claim'
     receipt['conversionAndVerificationSeconds'] = round(time.perf_counter()-started,3)

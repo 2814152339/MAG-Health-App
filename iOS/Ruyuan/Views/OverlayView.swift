@@ -117,10 +117,10 @@ struct NormalizedOverlayDrawing: View {
                     } else {
                         let path = makePath(points, closed: layer.kind == .polygons, size: size)
                         if layer.kind == .polygons { context.fill(path, with: .color(color.opacity(0.32))) }
-                        // Semantic masks are actual horizontal pixel runs. A
+                        // Pixel masks are actual horizontal runs/rectangles. A
                         // thick outline on every run would create artificial
                         // stripes and make the translucent mask look opaque.
-                        if !(layer.id.hasPrefix("semantic-") && layer.kind == .polygons) {
+                        if !((layer.id.hasPrefix("semantic-") || layer.id == "model-acne-segmentation") && layer.kind == .polygons) {
                             context.stroke(path, with: .color(color),
                                            style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
                         }

@@ -16,9 +16,9 @@ private enum ScanScene: Int, CaseIterable {
         case .triangle: return ["triangle", "chin"]
         case .brow: return ["brow", "eye-aspect", "canthus", "inner-angle", "geometry-eye"]
         case .nose: return ["nose", "lip", "mouth", "depth-surface"]
-        case .texture: return ["wrinkle", "texture", "line-", "forehead", "nasolabial"]
+        case .texture: return ["wrinkle", "texture", "line-", "lines", "forehead", "nasolabial"]
         case .spots: return ["spot", "pore", "dark", "redness", "highlight", "blackhead", "acne"]
-        case .eyeArea: return ["under-eye", "eye-area", "dark-circle", "lines-eye", "crow"]
+        case .eyeArea: return ["under-eye", "eye-area", "dark-circle", "lines-eye", "line-eye", "crow"]
         }
     }
     var landmarkNames: [String] {
@@ -340,6 +340,7 @@ struct AnalysisProgressView: View {
             addDistance("depth-surface-nose", calibratedID: "calibrated-nose-mm", names: ["nose"], dy: 0.025)
             addDistance("depth-surface-outerLips", calibratedID: "calibrated-outerLips-mm", names: ["outerLips"], dy: -0.025)
         default:
+            var labelledLayerIDs = Set<String>()
             for item in report.skin.flatMap(\.items) where scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) {
                 // Spatial summary, pixel denominator and component count can
                 // reference the same model layer; do not stack three labels
@@ -348,6 +349,7 @@ struct AnalysisProgressView: View {
                       !item.id.hasSuffix("-distribution") else { continue }
                 guard let id = item.overlayID, let layer = report.overlays.first(where: { $0.id == id }),
                       let rect = ReportPhotoTransform.region(points: layer.paths.flatMap { $0 }, padding: .zero, minimum: .zero) else { continue }
+                guard labelledLayerIDs.insert(id).inserted else { continue }
                 values.append(.init(id: item.id, anchor: .init(x: Double(rect.midX), y: Double(rect.minY)),
                                     text: item.title + "\n" + item.valueText))
             }

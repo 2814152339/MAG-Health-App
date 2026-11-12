@@ -1,0 +1,336 @@
+{
+  "schema": 1,
+  "id": "acne_segmentation",
+  "state": "converted_and_coreml_cpu_verified",
+  "source": {
+    "schema": 1,
+    "id": "rihem_acne_segmentation",
+    "repository": "RihemXX/Acnes",
+    "repositoryType": "space",
+    "revision": "79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83",
+    "license": "Apache-2.0",
+    "licenseEvidence": {
+      "spaceModelCard": "https://huggingface.co/spaces/RihemXX/Acnes/blob/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/README.md",
+      "authorGitHub": "rihem-bs02/Acnes",
+      "authorGitHubRevision": "826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7",
+      "path": "LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "architecture": {
+      "library": "segmentation-models-pytorch",
+      "version": "0.5.0",
+      "timmVersion": "1.0.31",
+      "name": "Unet",
+      "encoder_name": "resnet34",
+      "encoder_weights": null,
+      "in_channels": 3,
+      "classes": 1,
+      "parameterCount": 24436369,
+      "safeLoad": "torch.load(weights_only=True); tensor state_dict; strict=True"
+    },
+    "input": {
+      "width": 256,
+      "height": 256,
+      "layout": "RGB",
+      "resize": "OpenCV INTER_LINEAR stretched uint8",
+      "valueRange": [
+        0,
+        1
+      ],
+      "embeddedNormalization": {
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      }
+    },
+    "output": {
+      "name": "acneProbability",
+      "shape": [
+        1,
+        1,
+        256,
+        256
+      ],
+      "dtype": "float32",
+      "activation": "sigmoid",
+      "threshold": 0.2,
+      "thresholdComparison": ">"
+    },
+    "files": [
+      {
+        "path": "Acnes_model.pth",
+        "bytes": 97920000,
+        "sha256": "c58a6af6fb622d916e4aa788d9f620d59df4a42209f655ce4a9db49686c05697",
+        "source": "https://huggingface.co/spaces/RihemXX/Acnes/resolve/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/Acnes_model.pth?download=true",
+        "mirrors": [
+          "https://hf-mirror.com/spaces/RihemXX/Acnes/resolve/79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83/Acnes_model.pth?download=true&ruyuan=full"
+        ],
+        "role": "tensor_state_dict"
+      },
+      {
+        "path": "LICENSE",
+        "bytes": 11357,
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/LICENSE"
+      },
+      {
+        "path": "README-github.md",
+        "bytes": 15032,
+        "sha256": "4ca441ef58240faeee2ce419cd9ec0af722d7c16d647f0fb0af1cab329e7cf58",
+        "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/README.md"
+      },
+      {
+        "path": "final.ipynb",
+        "bytes": 740281,
+        "sha256": "fa92988a7ce0deda2285dfe34b18cad710c7fe6a6fef5fc0fc0134ec83c5b6af",
+        "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/final.ipynb",
+        "role": "preprocessing_reference_only_never_execute"
+      },
+      {
+        "path": "original.jpg",
+        "bytes": 25439,
+        "sha256": "b4cc2a6fe3504c9fb6528459e3f53215d3993a5d3a8252b989ee93b01cf8ba79",
+        "source": "https://raw.githubusercontent.com/rihem-bs02/Acnes/826e2adfc7d85c4cf9f3ffa3a68b82d24d3baeb7/original.jpg",
+        "role": "author_public_sample_no_ground_truth"
+      }
+    ],
+    "trainingDataNotice": {
+      "state": "author_full_provenance_not_disclosed",
+      "missing": [
+        "complete training-image source/license manifest",
+        "participant consent/processing scope",
+        "pixel-label protocol and expert adjudication",
+        "subject-disjoint split/prediction logs/evaluation configuration"
+      ],
+      "notClaimed": [
+        "reproduced 91 percent IoU",
+        "clinical acne subtypes",
+        "blackhead classification",
+        "diagnosis",
+        "commercial-data clearance"
+      ]
+    },
+    "integrationState": "verified_pytorch_module_only_not_registered_in_shared_pipeline_not_yet_coreml"
+  },
+  "computePrecision": "float32_activations_float16_weights",
+  "modelType": "neuralNetwork",
+  "parameterCount": 24436369,
+  "input": {
+    "name": "image",
+    "kind": "ImageType",
+    "width": 256,
+    "height": 256,
+    "colorLayout": "RGB",
+    "scale": 0.00392156862745098,
+    "bias": [
+      0,
+      0,
+      0
+    ],
+    "embeddedNormalization": {
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    },
+    "sourceResize": "OpenCV INTER_LINEAR uint8; Core ML parity receives exactly resized RGB"
+  },
+  "output": {
+    "name": "acneProbability",
+    "kind": "MultiArray",
+    "dtype": "float32",
+    "shape": [
+      1,
+      1,
+      256,
+      256
+    ]
+  },
+  "threshold": 0.2,
+  "validation": {
+    "data": "one author public image with no GT plus four synthetic RGB fixtures",
+    "traceMaxAbsoluteProbabilityError": 0.0,
+    "samples": [
+      {
+        "name": "author_public_example",
+        "shape": [
+          1,
+          1,
+          256,
+          256
+        ],
+        "maxAbsoluteProbabilityError": 0.0005255937576293945,
+        "meanAbsoluteProbabilityError": 4.452498615137301e-06,
+        "thresholds": [
+          {
+            "threshold": 0.2,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 1353,
+            "coremlCandidatePixels": 1353
+          },
+          {
+            "threshold": 0.5,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 426,
+            "coremlCandidatePixels": 426
+          }
+        ]
+      },
+      {
+        "name": "uniform_skin_rgb",
+        "shape": [
+          1,
+          1,
+          256,
+          256
+        ],
+        "maxAbsoluteProbabilityError": 5.3085386753082275e-06,
+        "meanAbsoluteProbabilityError": 7.123171741341139e-08,
+        "thresholds": [
+          {
+            "threshold": 0.2,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          },
+          {
+            "threshold": 0.5,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          }
+        ]
+      },
+      {
+        "name": "uniform_dark_rgb",
+        "shape": [
+          1,
+          1,
+          256,
+          256
+        ],
+        "maxAbsoluteProbabilityError": 3.82610596716404e-06,
+        "meanAbsoluteProbabilityError": 1.8677215507523215e-07,
+        "thresholds": [
+          {
+            "threshold": 0.2,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          },
+          {
+            "threshold": 0.5,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          }
+        ]
+      },
+      {
+        "name": "uniform_light_rgb",
+        "shape": [
+          1,
+          1,
+          256,
+          256
+        ],
+        "maxAbsoluteProbabilityError": 2.5797635316848755e-06,
+        "meanAbsoluteProbabilityError": 4.429038824582676e-08,
+        "thresholds": [
+          {
+            "threshold": 0.2,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          },
+          {
+            "threshold": 0.5,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          }
+        ]
+      },
+      {
+        "name": "seeded_rgb_noise",
+        "shape": [
+          1,
+          1,
+          256,
+          256
+        ],
+        "maxAbsoluteProbabilityError": 0.00014555919915437698,
+        "meanAbsoluteProbabilityError": 1.0397004643891705e-06,
+        "thresholds": [
+          {
+            "threshold": 0.2,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          },
+          {
+            "threshold": 0.5,
+            "maskDisagreementFraction": 0.0,
+            "torchCandidatePixels": 0,
+            "coremlCandidatePixels": 0
+          }
+        ]
+      }
+    ],
+    "gates": {
+      "maxAbsoluteProbabilityError": 0.001,
+      "maxMaskDisagreementFraction": 0.001,
+      "exactOutputShape": [
+        1,
+        1,
+        256,
+        256
+      ]
+    },
+    "meaning": "CPU format-conversion parity only; no independent selfie accuracy or IoU claim"
+  },
+  "environment": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "python": "3.11.9",
+    "packages": {
+      "torch": "2.7.0",
+      "numpy": "1.26.4",
+      "Pillow": "11.3.0",
+      "segmentation-models-pytorch": "0.5.0",
+      "timm": "1.0.31",
+      "torchvision": "0.22.0",
+      "coremltools": "9.0"
+    }
+  },
+  "conversionAndVerificationSeconds": 14.571,
+  "resource": {
+    "fileName": "AcneSegmentation.mlmodel",
+    "bytes": 48862307,
+    "sha256": "0d022cbf4e3f266128ff23525a683452a43f05079d88eba4fd6f4124f40daf7a",
+    "inputName": "image",
+    "outputName": "acneProbability",
+    "outputShape": [
+      1,
+      1,
+      256,
+      256
+    ],
+    "revision": "79182ede8d14cb44de63b4f6ace1fa2a5a7a3d83",
+    "computePrecision": "float32_activations_float16_weights",
+    "threshold": 0.2
+  }
+}

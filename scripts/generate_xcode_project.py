@@ -37,7 +37,11 @@ resources = [('Ruyuan/Resources/Assets.xcassets','folder.assetcatalog'),
              ('Ruyuan/Resources/Models/PoreNet.mlmodel','file.mlmodel'),
              ('Ruyuan/Resources/Models/PoreNet-resource-manifest.json','text.json'),
              ('Ruyuan/Resources/Models/PoreNet-fixture-reference.json','text.json'),
-             ('Ruyuan/Resources/Models/LICENSE-PoreNet.txt','text')]
+             ('Ruyuan/Resources/Models/LICENSE-PoreNet.txt','text'),
+             ('Ruyuan/Resources/Models/AcneSegmentation.mlmodel','file.mlmodel'),
+             ('Ruyuan/Resources/Models/AcneSegmentation-resource-manifest.json','text.json'),
+             ('Ruyuan/Resources/Models/AcneSegmentation-fixture-reference.json','text.json'),
+             ('Ruyuan/Resources/Models/LICENSE-AcneSegmentation.txt','text')]
 coreml_root = IOS / 'Ruyuan/Resources/CoreML'
 for package in sorted(coreml_root.glob('*.mlpackage')):
     resources.append((package.relative_to(IOS).as_posix(), 'folder.mlpackage'))
@@ -85,7 +89,7 @@ for group,name,ptype,product,filetype in target_names:
     obj('target:'+group, f'isa = PBXNativeTarget; buildConfigurationList = {ref("configlist:"+group)}; buildPhases = {ids(["sources:"+group,"frameworks:"+group,"resources:"+group])}; buildRules = (); dependencies = {ids(dependencies)}; packageProductDependencies = {ids(["packageproduct:vision"] if group=="app" else [])}; name = {name}; productName = {name}; productReference = {ref("product:"+group)}; productType = {q(ptype)};')
     for mode in ['Debug','Release']:
         settings = {'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon','CODE_SIGN_STYLE':'Automatic',
-                    'CURRENT_PROJECT_VERSION':'6','MARKETING_VERSION':'0.3.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
+                    'CURRENT_PROJECT_VERSION':'7','MARKETING_VERSION':'0.3.0','IPHONEOS_DEPLOYMENT_TARGET':'17.0',
                     'PRODUCT_BUNDLE_IDENTIFIER':'com.ruyuan.aesthetics' + ('.tests' if group=='tests' else '.uitests' if group=='ui' else ''),
                     'PRODUCT_NAME':'$(TARGET_NAME)','SDKROOT':'iphoneos','SUPPORTED_PLATFORMS':'iphoneos iphonesimulator',
                     'SWIFT_VERSION':'5.0','SWIFT_STRICT_CONCURRENCY':'targeted','TARGETED_DEVICE_FAMILY':'1',
