@@ -540,7 +540,7 @@ private struct ReportDetailSheet: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("\(index + 1). \(item.title)").font(.subheadline.weight(.semibold))
                         Text(observationValue(item)).font(.caption.weight(.medium)).foregroundStyle(RuyuanStyle.purple)
-                        Label(item.id.hasPrefix("trained-") ? "整张面部分类 · 无像素位置输出" : layer == nil ? "点击缩略图查看原图" : "图片标色代表对应观察区域",
+                        Label(isWholeFaceClassifier(item) ? "整张面部分类 · 无像素位置输出" : layer == nil ? "点击缩略图查看原图" : "图片标色代表对应观察区域",
                               systemImage: layer == nil ? "photo" : "circle.lefthalf.filled")
                             .font(.system(size: 10)).foregroundStyle(RuyuanStyle.muted)
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -564,6 +564,12 @@ private struct ReportDetailSheet: View {
         }
     }
 
+    private func isWholeFaceClassifier(_ item: SkinItem) -> Bool {
+        ["trained-skin_type", "trained-acne", "trained-wrinkles"].contains { base in
+            item.id == base || item.id == base + "-distribution"
+        }
+    }
+
     /// Translate only the checkpoint's documented labels, while retaining the
     /// original class and probability. A classifier confidence is not coverage.
     private func observationValue(_ item: SkinItem) -> String {
@@ -572,7 +578,8 @@ private struct ReportDetailSheet: View {
         let statuses = ["runtime_not_installed": "未安装推理运行库", "checksum_mismatch": "模型校验未通过",
                         "not_downloaded": "模型尚未下载", "not_bundled": "本安装包未包含该模型",
                         "metadata_mismatch": "模型版本信息校验未通过", "invalid_input": "本次面部裁剪不可用",
-                        "invalid_output": "本次模型输出无效", "inference_failed": "本次推理失败", "disabled": "未启用"]
+                        "invalid_output": "本次模型输出无效", "invalid_model": "模型校验未通过",
+                        "inference_failed": "本次推理失败", "disabled": "未启用"]
         for (raw, chinese) in statuses { value = value.replacingOccurrences(of: raw, with: chinese + "（" + raw + "）") }
         let labels: [(String, String)]
         if item.id.hasPrefix("trained-skin_type") {
@@ -615,7 +622,7 @@ private struct ReportDetailSheet: View {
                     }
                 }
             }
-        } else if (["highlight", "pigment-candidates", "redness", "pore-candidates"].contains(item.id) || item.id.hasPrefix("line-")),
+        } else if (["highlight", "pigment-candidates", "redness", "pore-candidates", "trained-pore-net"].contains(item.id) || item.id.hasPrefix("line-")),
                   let range = item.valueText.range(of: #"[0-9]+(?:\.[0-9]+)?(?=\s*%)"#, options: .regularExpression),
                   let percentage = Double(item.valueText[range]), percentage.isFinite, (0...100).contains(percentage) {
             VStack(alignment: .leading, spacing: 5) {
@@ -626,13 +633,25 @@ private struct ReportDetailSheet: View {
                             .frame(width: proxy.size.width * CGFloat(percentage / 100))
                     }
                 }.frame(height: 4)
-                Text("本图覆盖率 \(String(format: "%.1f", percentage))% · 不是严重程度分级")
+                Text("\(item.id == "trained-pore-net" ? "有效面皮模型候选覆盖率" : "有效采样区覆盖率") \(String(format: "%.1f", percentage))% · 不是严重程度分级")
                     .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
             }
         }
     }
 
     private func explanation(for item:SkinItem)->String {
+        if item.id.hasPrefix("trained-pore-net") {
+            if item.id == "trained-pore-net-pixels" {
+                return "分子是专项模型的候选像素，分母是通过真实语义分割与五官排除的有效面部皮肤像素，不是整张图片的像素或物理尺寸。"
+            }
+            if item.id == "trained-pore-net-components" {
+                return "按模型概率阈值和8邻接统计连通候选片区，不等于真实毛孔个数或黑头数量。图层只显示最多300个片区的真实峰值位置。"
+            }
+            if item.valueText.contains("%") {
+                return "专项像素模型在可靠面部皮肤采样区内标出毛孔候选。比例是候选像素面积，不是准确率、严重度、黑头分类或真实毛孔计数；可点开实际位置与原图核对。"
+            }
+            return "本次未提供可靠的专项模型覆盖率，保留上方真实原因。不会把原有启发式细点、零值或插值图当成毛孔模型结果。"
+        }
         if item.id.hasPrefix("trained-") {
             if item.valueText.hasPrefix("未运行") { return "本次没有此训练模型的可靠分类结果，保留实际未运行状态，不补分类、置信度或分数。" }
             if item.id.hasSuffix("-distribution") { return "各类别的模型 softmax 概率，未做人群校准。它们不是准确率、皮肤面积或临床严重度比例。" }

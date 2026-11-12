@@ -335,6 +335,11 @@ struct AnalysisProgressView: View {
             addDistance("depth-surface-outerLips", calibratedID: "calibrated-outerLips-mm", names: ["outerLips"], dy: -0.025)
         default:
             for item in report.skin.flatMap(\.items) where scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) {
+                // Spatial summary, pixel denominator and component count can
+                // reference the same model layer; do not stack three labels
+                // at one anchor or turn model probabilities into locations.
+                guard !item.id.hasSuffix("-pixels"), !item.id.hasSuffix("-components"),
+                      !item.id.hasSuffix("-distribution") else { continue }
                 guard let id = item.overlayID, let layer = report.overlays.first(where: { $0.id == id }),
                       let rect = ReportPhotoTransform.region(points: layer.paths.flatMap { $0 }, padding: .zero, minimum: .zero) else { continue }
                 values.append(.init(id: item.id, anchor: .init(x: Double(rect.midX), y: Double(rect.minY)),

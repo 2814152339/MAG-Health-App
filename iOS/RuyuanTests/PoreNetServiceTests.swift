@@ -6,8 +6,8 @@ import XCTest
 @testable import Ruyuan
 
 final class PoreNetServiceTests: XCTestCase {
-    private var landmarks: [String: [NormalizedPoint]] {
-        func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> [NormalizedPoint] {
+    private var landmarks: [String: [Ruyuan.NormalizedPoint]] {
+        func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> [Ruyuan.NormalizedPoint] {
             [.init(x: x, y: y), .init(x: x + w, y: y), .init(x: x + w, y: y + h), .init(x: x, y: y + h)]
         }
         return ["leftEye": rect(0.25, 0.40, 0.14, 0.04), "rightEye": rect(0.61, 0.40, 0.14, 0.04),
@@ -275,7 +275,7 @@ final class PoreNetServiceTests: XCTestCase {
         let raster = try XCTUnwrap(LocalAnalyzer.makeRaster(image(width: width, height: height)))
         let appearance = AppearanceAnalyzer.analyze(raster: raster, landmarks: landmarks, faceBox: box, segmentation: input)
         let boundary = input.boundaryGeometry(landmarks: landmarks, faceBox: box)
-        let densePoints = (0..<478).map { i in NormalizedPoint(x: 0.1 + Double(i % 23) / 30, y: 0.1 + Double(i / 23) / 30) }
+        let densePoints = (0..<478).map { i in Ruyuan.NormalizedPoint(x: 0.1 + Double(i % 23) / 30, y: 0.1 + Double(i / 23) / 30) }
         let dense = try FaceLandmarkService.makeResult(points: densePoints, relativeZ: .init(repeating: 0, count: 478))
         var paths = landmarks.map { LandmarkPath(id: $0.key, points: $0.value, closed: false) } + dense.landmarks
         if let path = boundary.path { paths.append(path) }

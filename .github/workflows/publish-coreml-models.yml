@@ -1,0 +1,48 @@
+name: Persist Verified Core ML Models in Private Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-verified-coreml-private-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.repository == '2814152339/ruyuan-aesthetics-ios' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout only publisher and reviewed source lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.11 standard library only
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - name: Run offline safety and idempotence tests before any release write
+        run: python -m unittest discover -s scripts/tests -p test_publish_coreml_release.py -v
+      - name: Verify pinned originals and persist byte-identical private release assets
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WORK: ${{ runner.temp }}/ruyuan-coreml-release-models
+          OUTPUT: ${{ runner.temp }}/ruyuan-coreml-release-evidence
+        run: |
+          set -euo pipefail
+          python -u scripts/publish_coreml_release.py --work "$WORK" --output "$OUTPUT"
+      - name: Upload candidate lock and real publication evidence for review
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Ruyuan-CoreML-Private-Release-Lock-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ruyuan-coreml-release-evidence/coreml-release-lock.json
+            ${{ runner.temp }}/ruyuan-coreml-release-evidence/publish-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
