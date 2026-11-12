@@ -407,6 +407,7 @@ final class RuyuanUITests: XCTestCase {
         let details = identified("openReportDetails", in: app)
         XCTAssertTrue(reveal(details, in: app)); details.tap()
         XCTAssertTrue(identified("reportDetailSheet", in: app).waitForExistence(timeout: 5))
+        expandReportDetails(in: app)
         let geometry = identified("reportGeometryTools", in: app)
         XCTAssertTrue(reveal(geometry, in: app)); geometry.tap()
         let calibration = identified("openCalibrationTools", in: app)
@@ -847,15 +848,54 @@ final class RuyuanUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, maximumSwipes: Int = 12) -> Bool {
         let beganInDetails = identified("reportDetailSheet", in: app).exists
         if isReachable(element, in: app) { return true }
-        for _ in 0..<maximumSwipes {
+        var previousFrame: CGRect?
+        var stationaryAttempts = 0
+        // Retain the old overall bound, but never blindly sweep up and then
+        // down. An existing target under the pinned tabs needs a short DOWN
+        // drag, not another upward swipe and eventual native sheet dismissal.
+        for _ in 0..<max(0, maximumSwipes * 2) {
             if beganInDetails && !identified("reportDetailSheet", in: app).exists { return false }
-            scrollVertically(in: app, up: true)
             if isReachable(element, in: app) { return true }
-        }
-        for _ in 0..<maximumSwipes {
-            if beganInDetails && !identified("reportDetailSheet", in: app).exists { return false }
-            scrollVertically(in: app, up: false)
-            if isReachable(element, in: app) { return true }
+            var viewport = unobscuredViewport(in: app).insetBy(dx: 3, dy: 3)
+            let targetExists = element.exists
+            let tabs = identified("reportDimensionTabs", in: app)
+            if !(targetExists && element.identifier.hasPrefix("detail-tab-")), tabs.exists, tabs.isHittable {
+                let frame = tabs.frame
+                if frame.minY <= viewport.minY + 4 && frame.maxY > viewport.minY {
+                    let bottom = viewport.maxY
+                    viewport.origin.y = frame.maxY + 4
+                    viewport.size.height = max(0, bottom - viewport.minY)
+                }
+            }
+            guard !viewport.isNull, !viewport.isEmpty, viewport.height > 40 else { return false }
+            var delta = viewport.height * 0.32 // Only absent lazy targets are searched progressively upward.
+            if targetExists {
+                let frame = element.frame
+                guard frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite,
+                      !frame.isEmpty, !frame.isNull else { return false }
+                if previousFrame == frame { stationaryAttempts += 1 } else { stationaryAttempts = 0 }
+                guard stationaryAttempts < 2 else { return false }
+                previousFrame = frame
+                guard (viewport.minX...viewport.maxX).contains(frame.midX) else { return false }
+                if frame.midY < viewport.minY {
+                    delta = frame.minY - viewport.minY - 8
+                } else if frame.midY > viewport.maxY {
+                    delta = frame.maxY - viewport.maxY + 8
+                } else {
+                    // The center is already clear of all measured blockers.
+                    // Do not scroll a covered/disabled element into another page.
+                    return isReachable(element, in: app)
+                }
+                delta = min(max(delta, -viewport.height * 0.32), viewport.height * 0.32)
+            } else {
+                previousFrame = nil
+                stationaryAttempts = 0
+            }
+            let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            let x = viewport.midX - app.frame.minX
+            let y = viewport.midY - app.frame.minY
+            origin.withOffset(CGVector(dx: x, dy: y + delta / 2)).press(forDuration: 0.05,
+                thenDragTo: origin.withOffset(CGVector(dx: x, dy: y - delta / 2)))
         }
         return isReachable(element, in: app)
     }

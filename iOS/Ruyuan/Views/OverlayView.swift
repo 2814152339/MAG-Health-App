@@ -361,7 +361,11 @@ struct OverlayView: View {
                 ScrollView {
                     viewingTools.padding(.bottom, 4)
                 }
-                .frame(maxHeight: maximumToolsHeight)
+                // Reserve an actual drawer viewport. A maxHeight alone lets
+                // the photo GeometryReader compress this to the layer strip,
+                // leaving zoom/focus controls below a nearly unscrollable 42pt
+                // nested horizontal scroller on the smallest supported phone.
+                .frame(height: maximumToolsHeight)
                 .accessibilityIdentifier("overlayToolsScrollView")
             }
         }
