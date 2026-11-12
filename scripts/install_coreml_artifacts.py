@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install hash-pinned, verified public Core ML packages from private CI artifacts.
+"""Install pinned public Core ML packages from private Releases or legacy CI artifacts.
 
 Only CI's ephemeral GITHUB_TOKEN is used; it never enters the app/resources/logs.
 Source photos, repositories' Python code and training checkpoints are not copied.
@@ -10,9 +10,11 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -33,24 +35,109 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs): return None
 
 
-def request_artifact(artifact_id, token):
-    headers = {"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
-               "User-Agent": "Ruyuan-CoreML-Bundle", "X-GitHub-Api-Version": "2022-11-28"}
-    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/actions/artifacts/{artifact_id}/zip", headers=headers)
+def positive_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def archive_source(pin):
+    """Release bytes are already the pinned inner ZIP; Actions bytes wrap that ZIP.
+
+    Construct the API path ourselves, never authenticate a URL supplied by a lock or redirect.
+    A failed Release download must not silently fall back to an expiring Actions artifact.
+    """
+    source = pin.get("source")
+    if "releaseAssetID" in pin or isinstance(source, dict) and source.get("type") == "githubRelease":
+        asset_id = pin.get("releaseAssetID")
+        if not positive_integer(asset_id): raise ValueError("invalid_release_asset_id")
+        suffix = f"/releases/assets/{asset_id}"
+        if source is not None:
+            if (not isinstance(source, dict) or source.get("type") != "githubRelease"
+                    or source.get("repository") != REPO or source.get("assetID") != asset_id
+                    or source.get("assetName") != f"Ruyuan-CoreML-{pin['id']}.zip"
+                    or source.get("apiURL") != "https://api.github.com/repos/" + REPO + suffix
+                    or not positive_integer(source.get("releaseID"))
+                    or source.get("releaseID") != pin.get("releaseID")
+                    or not isinstance(source.get("tag"), str) or not source["tag"]
+                    or source.get("tag") != pin.get("releaseTag")):
+                raise ValueError("release_source_identity_mismatch")
+        return "release", suffix
+    if source is not None: raise ValueError("unsupported_model_archive_source")
+    if not positive_integer(pin.get("artifactID")): raise ValueError("invalid_legacy_artifact_id")
+    return "actions", f"/actions/artifacts/{pin['artifactID']}/zip"
+
+
+def public_storage_url(url):
     try:
-        urllib.request.build_opener(NoRedirect()).open(req, timeout=45)
+        parsed = urllib.parse.urlsplit(url)
+        host = (parsed.hostname or "").lower()
+        return (parsed.scheme == "https" and parsed.port in (None, 443) and not parsed.username and not parsed.password
+                and not parsed.fragment and any(host.endswith(suffix) and host != suffix[1:] for suffix in
+                    (".blob.core.windows.net", ".actions.githubusercontent.com", ".githubusercontent.com")))
+    except (TypeError, ValueError): return False
+
+
+def unsigned_response(url):
+    # A separate no-redirect opener and a NEW unauthenticated Request at every hop prevent both
+    # Authorization forwarding and accidental redirects to arbitrary/private network locations.
+    opener = urllib.request.build_opener(NoRedirect())
+    for _ in range(5):
+        if not public_storage_url(url): raise RuntimeError("unapproved_model_storage_redirect")
+        request = urllib.request.Request(url, headers={"User-Agent": "Ruyuan-CoreML-Bundle"})
+        try:
+            return opener.open(request, timeout=180)
+        except urllib.error.HTTPError as error:
+            code, location = error.code, error.headers.get("Location")
+            error.close()
+            if code in (301, 302, 303, 307, 308) and location:
+                url = urllib.parse.urljoin(url, location)
+                continue
+            raise RuntimeError("model_storage_failed_http_" + str(code)) from None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            raise RuntimeError("model_storage_network_failed") from None
+    raise RuntimeError("too_many_model_storage_redirects")
+
+
+def github_binary_response(suffix, token):
+    # suffix is produced only by archive_source, never by a redirect or an arbitrary source URL.
+    if not re.fullmatch(r"/(?:actions/artifacts/[1-9][0-9]*/zip|releases/assets/[1-9][0-9]*)", suffix):
+        raise ValueError("invalid_model_api_path")
+    # Actions /zip rejects octet-stream with HTTP 415; Release binary download requires it.
+    accept = "application/vnd.github+json" if suffix.startswith("/actions/") else "application/octet-stream"
+    headers = {"Authorization": "Bearer " + token, "Accept": accept,
+               "User-Agent": "Ruyuan-CoreML-Bundle", "X-GitHub-Api-Version": "2022-11-28"}
+    req = urllib.request.Request("https://api.github.com/repos/" + REPO + suffix, headers=headers)
+    try:
+        # GitHub documents both a direct 200 binary response and a 302 storage redirect.
+        return urllib.request.build_opener(NoRedirect()).open(req, timeout=60)
     except urllib.error.HTTPError as error:
-        if error.code in (301, 302, 303, 307, 308): return error.headers["Location"]
-        raise RuntimeError("artifact_download_authorization_failed:" + str(error.code)) from None
-    raise RuntimeError("expected_signed_artifact_redirect")
+        code, location = error.code, error.headers.get("Location")
+        error.close()
+        if code in (301, 302, 303, 307, 308) and location: return unsigned_response(location)
+        raise RuntimeError("model_download_authorization_failed_http_" + str(code)) from None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        raise RuntimeError("model_download_network_failed") from None
+
+
+def download_archive(suffix, token, destination, limit):
+    try:
+        with github_binary_response(suffix, token) as source, destination.open("wb") as output:
+            return copy_bounded(source, output, limit)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        # Do not leak signed URLs, request headers or upstream reason text into CI tracebacks.
+        raise RuntimeError("model_download_stream_failed") from None
 
 
 def safe_files(archive):
     if len(archive.infolist()) > 200: raise ValueError("too_many_artifact_entries")
+    names = set()
     for info in archive.infolist():
         path = PurePosixPath(info.filename)
-        if path.is_absolute() or ".." in path.parts or "\\" in info.filename or ":" in info.filename:
+        if not info.filename or path.is_absolute() or ".." in path.parts or "\\" in info.filename or ":" in info.filename:
             raise ValueError("unsafe_artifact_member")
+        if info.filename in names: raise ValueError("duplicate_artifact_member")
+        names.add(info.filename)
+        if info.flag_bits & 1: raise ValueError("encrypted_artifact_member")
+        if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED): raise ValueError("unsupported_artifact_compression")
         # Disallow symbolic links even in authenticated build output.
         if (info.external_attr >> 16) & 0o170000 == 0o120000: raise ValueError("artifact_symlink")
         yield info
@@ -138,6 +225,13 @@ def install(lock_path=LOCK, check=False):
     if lock["schema"] != 1 or {m["id"] for m in lock["models"]} != set(specs):
         raise ValueError("incomplete_coreml_lock")
     if len(lock["models"]) != len(specs): raise ValueError("duplicate_coreml_lock_id")
+    sources = {}
+    for pin in lock["models"]:
+        if (not positive_integer(pin.get("archiveBytes")) or pin["archiveBytes"] > 1024**3
+                or not isinstance(pin.get("archiveSHA256"), str) or not re.fullmatch(r"[a-f0-9]{64}", pin["archiveSHA256"])):
+            raise ValueError("invalid_model_archive_pin")
+        verify_contract(pin["model"], specs)
+        sources[pin["id"]] = archive_source(pin)
     if check:
         verify_installed(DEST, lock, specs)
         return
@@ -150,18 +244,19 @@ def install(lock_path=LOCK, check=False):
         for pin in lock["models"]:
             key = pin["id"]
             if not token: raise RuntimeError("GITHUB_TOKEN_required_for_private_artifact_download")
-            outer = temporary / (key + "-action.zip")
-            url = request_artifact(int(pin["artifactID"]), token)
-            # New request intentionally does NOT forward GitHub Authorization to storage.
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Ruyuan-CoreML-Bundle"}), timeout=180) as source, outer.open("wb") as destination:
-                copy_bounded(source, destination, pin["archiveBytes"] + 2_000_000)
             inner = temporary / (key + ".zip")
-            with zipfile.ZipFile(outer) as archive:
-                entries = [i for i in safe_files(archive) if i.filename.endswith("Ruyuan-CoreML-" + key + ".zip")]
-                if len(entries) != 1: raise ValueError("missing_verified_model_archive")
-                if entries[0].file_size != pin["archiveBytes"]: raise ValueError("wrong_model_archive_size")
-                with archive.open(entries[0]) as source, inner.open("wb") as destination:
-                    copy_bounded(source, destination, pin["archiveBytes"])
+            kind, suffix = sources[key]
+            if kind == "release":
+                download_archive(suffix, token, inner, pin["archiveBytes"])
+            else:
+                outer = temporary / (key + "-action.zip")
+                download_archive(suffix, token, outer, pin["archiveBytes"] + 2_000_000)
+                with zipfile.ZipFile(outer) as archive:
+                    entries = [i for i in safe_files(archive) if i.filename.endswith("Ruyuan-CoreML-" + key + ".zip")]
+                    if len(entries) != 1: raise ValueError("missing_verified_model_archive")
+                    if entries[0].file_size != pin["archiveBytes"]: raise ValueError("wrong_model_archive_size")
+                    with archive.open(entries[0]) as source, inner.open("wb") as destination:
+                        copy_bounded(source, destination, pin["archiveBytes"])
             if inner.stat().st_size != pin["archiveBytes"] or digest(inner) != pin["archiveSHA256"]:
                 raise ValueError("coreml_archive_digest_mismatch")
             extracted = temporary / key; extracted.mkdir()
@@ -183,7 +278,8 @@ def install(lock_path=LOCK, check=False):
             records.append(record)
             print("Installed hash-verified trained model:", key)
         (staged/"coreml-model-manifest.json").write_text(json.dumps({"schema": 1, "models": records}, indent=2)+"\n", encoding="utf-8")
-        if DEST.resolve().parent != (ROOT/"iOS/Ruyuan/Resources").resolve(): raise RuntimeError("unexpected_destination")
+        expected = (ROOT/"iOS/Ruyuan/Resources").resolve()/"CoreML"
+        if not expected.is_relative_to(ROOT.resolve()) or DEST.resolve() != expected: raise RuntimeError("unexpected_destination")
         if DEST.exists():
             # Only this exact generated model directory, never any other source/resource.
             shutil.rmtree(DEST)
@@ -195,4 +291,11 @@ if __name__ == "__main__":
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--lock", type=Path, default=LOCK)
     args = parser.parse_args()
-    install(args.lock, args.check)
+    try:
+        install(args.lock, args.check)
+    except Exception as error:
+        # Fixed local error codes only. Never print upstream reason text, URLs or headers.
+        code = str(error)
+        if not isinstance(error, (RuntimeError, ValueError)) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", code):
+            code = "coreml_install_failed_no_secret_details_logged"
+        raise SystemExit(code) from None
