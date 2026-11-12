@@ -324,17 +324,28 @@ struct AnalysisProgressView: View {
                                         showsFeatureGuides: scene == .brow, showsChinGuides: scene == .triangle)
                     measurementGuides(report, transform: transform, progress: phases.referenceLines,
                                       measurementProgress: phases.measurements)
-                    ForEach(values) { item in
-                        let progress = item.unit == "°" ? angleProgress(elapsed: elapsed, phases: phases) : phases.measurements
-                        let labelOpacity = scene == .face && item.unit == "°" ? progress : phases.labels
-                        Text(item.displayedText(progress: progress))
-                            .font(.system(size: 12, weight: .medium)).multilineTextAlignment(.center)
-                            .foregroundStyle(.white).shadow(color: .black.opacity(0.75), radius: 2)
-                            .position(transform.position(item.anchor))
-                            .opacity(labelOpacity)
-                            .offset(y: CGFloat(1 - labelOpacity) * 5)
-                            .allowsHitTesting(false)
-                            .accessibilityIdentifier("scanMeasurement-\(item.id)")
+                    if scene == .brow || scene == .triangle {
+                        let labels = values.map { item in
+                            let progress = item.unit == "°" ? angleProgress(elapsed: elapsed, phases: phases) : phases.measurements
+                            return ScanMeasurementLabelPresentation(id: item.id, anchor: transform.position(item.anchor),
+                                text: item.displayedText(progress: progress), opacity: phases.labels,
+                                verticalOffset: CGFloat(1 - phases.labels) * 5)
+                        }
+                        ScanAvoidingMeasurementLabels(labels: labels, viewport: proxy.size,
+                            obstacles: measurementLabelObstacles(paths: paths, layers: layers, transform: transform))
+                    } else {
+                        ForEach(values) { item in
+                            let progress = item.unit == "°" ? angleProgress(elapsed: elapsed, phases: phases) : phases.measurements
+                            let labelOpacity = scene == .face && item.unit == "°" ? progress : phases.labels
+                            Text(item.displayedText(progress: progress))
+                                .font(.system(size: 12, weight: .medium)).multilineTextAlignment(.center)
+                                .foregroundStyle(.white).shadow(color: .black.opacity(0.75), radius: 2)
+                                .position(transform.position(item.anchor))
+                                .opacity(labelOpacity)
+                                .offset(y: CGFloat(1 - labelOpacity) * 5)
+                                .allowsHitTesting(false)
+                                .accessibilityIdentifier("scanMeasurement-\(item.id)")
+                        }
                     }
                     if !sampling.isEmpty {
                         Text("眼下采样范围").font(.system(size: 11)).foregroundStyle(.white)
@@ -352,6 +363,34 @@ struct AnalysisProgressView: View {
         .accessibilityValue((region(report) == nil ? "完整照片" : "已按本报告眉眼点位定位局部")
             + (phases.panel >= 1 ? " · 标注展开完成" : " · 动画展开中"))
         .accessibilityIdentifier("scanOriginalPhoto")
+    }
+
+    private func measurementLabelObstacles(paths: [LandmarkPath], layers: [OverlayLayer],
+                                           transform: ReportPhotoTransform) -> [CGRect] {
+        var references: [ScanFeatureGuideGeometry.Segment] = []
+        var dimensions: [ScanFeatureGuideGeometry.Segment] = []
+        if scene == .brow, let guides = ScanFeatureGuideGeometry.guides(landmarks: paths, transform: transform) {
+            references = guides.referenceSegments
+            dimensions = guides.dimensionSegments
+        } else if scene == .triangle,
+                  let points = layers.first(where: { $0.id == "geometry-chin-points" })?.paths.first,
+                  let guides = ScanFeatureGuideGeometry.chinGuides(points: points, transform: transform) {
+            references = guides.referenceSegments
+            dimensions = guides.dimensionSegments
+        }
+        func bounds(_ segment: ScanFeatureGuideGeometry.Segment, thickness: CGFloat) -> CGRect {
+            CGRect(x: min(segment.start.x, segment.end.x) - thickness / 2,
+                   y: min(segment.start.y, segment.end.y) - thickness / 2,
+                   width: abs(segment.end.x - segment.start.x) + thickness,
+                   height: abs(segment.end.y - segment.start.y) + thickness)
+        }
+        // Same 0.7pt reference stroke and 1.5pt/filled heads as the actual
+        // renderer. The placement helper, not these bounds, adds the 6pt gap.
+        return references.map { bounds($0, thickness: 0.7) } + dimensions.map { segment in
+            let length = hypot(segment.end.x - segment.start.x, segment.end.y - segment.start.y)
+            let headSize = min(CGFloat(6), length / 5)
+            return bounds(segment, thickness: max(1.5, 2 * headSize * sin(CGFloat(0.48))))
+        }
     }
 
     private func sceneLandmarks(_ report: AnalysisReport) -> [LandmarkPath] {
@@ -628,6 +667,82 @@ struct AnalysisProgressView: View {
                 .accessibilityLabel("下一分析画面").accessibilityIdentifier("scanNextScene")
             Button("查看报告") { store.finishScanPresentation() }.font(.caption.weight(.medium)).accessibilityIdentifier("scanViewReport")
         }.foregroundStyle(.white).padding(.horizontal, 18).padding(.top, 2).padding(.bottom, 16)
+    }
+}
+
+private struct ScanMeasurementLabelPresentation: Identifiable {
+    let id: String
+    let anchor: CGPoint
+    let text: String
+    let opacity: Double
+    let verticalOffset: CGFloat
+}
+
+/// Measures the very same SwiftUI text used for display. Only these two focused
+/// scenes use avoidance; no report value or source anchor is modified.
+private struct ScanAvoidingMeasurementLabels: View {
+    let labels: [ScanMeasurementLabelPresentation]
+    let viewport: CGSize
+    let obstacles: [CGRect]
+    @State private var measuredSizes: [String: CGSize] = [:]
+
+    private struct Placement: Identifiable {
+        let label: ScanMeasurementLabelPresentation
+        let center: CGPoint
+        var id: String { label.id }
+    }
+
+    private var placements: [Placement] {
+        var result: [Placement] = []
+        var occupied = obstacles
+        let bounds = CGRect(origin: .zero, size: viewport).insetBy(dx: 3, dy: 3)
+        for label in labels {
+            guard let size = measuredSizes[label.id] else { continue }
+            // Include the existing 5pt reveal offset before solving so it
+            // cannot move a correctly placed label back onto a dimension.
+            let desired = CGPoint(x: label.anchor.x, y: label.anchor.y + label.verticalOffset)
+            guard let center = ScanMeasurementLabelGeometry.safeCenter(desiredAnchor: desired,
+                labelSize: size, viewport: bounds, obstacles: occupied) else { continue }
+            result.append(Placement(label: label, center: center))
+            occupied.append(CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                                   width: size.width, height: size.height))
+        }
+        return result
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(labels) { label in
+                styledText(label.text)
+                    .background {
+                        GeometryReader { measurement in
+                            Color.clear.onChange(of: measurement.size, initial: true) { _, size in
+                                guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+                                      measuredSizes[label.id] != size else { return }
+                                measuredSizes[label.id] = size
+                            }
+                        }
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                    .accessibilityRepresentation { EmptyView() }
+            }
+            ForEach(placements) { placement in
+                styledText(placement.label.text)
+                    .position(x: placement.center.x, y: placement.center.y - placement.label.verticalOffset)
+                    .opacity(placement.label.opacity)
+                    .offset(y: placement.label.verticalOffset)
+                    .accessibilityIdentifier("scanMeasurement-\(placement.id)")
+            }
+        }
+        .frame(width: viewport.width, height: viewport.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    private func styledText(_ text: String) -> some View {
+        Text(text).font(.system(size: 12, weight: .medium)).multilineTextAlignment(.center)
+            .foregroundStyle(.white).shadow(color: .black.opacity(0.75), radius: 2)
+            .fixedSize()
     }
 }
 
