@@ -20,7 +20,12 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_MANIFEST = ROOT/'backend/ruyuan/skin_model_manifest.json'
-NAMES = {'acne':'RuyuanAcneFloat16','wrinkles':'RuyuanWrinklesFloat16','skin_type':'RuyuanSkinTypeFloat16'}
+NAMES = {'acne':'RuyuanAcneFloat16','wrinkles':'RuyuanWrinklesFloat16','skin_type':'RuyuanSkinTypeFloat32'}
+# The skin-type checkpoint has a verified near-tie on seeded_noise: PyTorch's
+# normal-vs-dry logit margin is 0.0010882076. FLOAT16 flipped that ranking on the
+# actual macOS CPU runtime (run 43132528504). Preserve source decisions by keeping
+# this checkpoint in FLOAT32, rather than relaxing the all-Top1-match gate.
+PRECISIONS = {'acne':'float16','wrinkles':'float16','skin_type':'float32'}
 EXPECTED = {'coremltools':'9.0','torch':'2.7.0','transformers':'4.57.6','safetensors':'0.7.0','numpy':'1.26.4','Pillow':'11.3.0'}
 
 
@@ -124,7 +129,9 @@ def convert_one(key: str, models_root: Path, output: Path, *, preflight: bool=Fa
         'source':{'repository':spec['repo'],'revision':spec['revision'],'license':spec['license'],
                   'modelSHA256':next(f['sha256'] for f in spec['files'] if f['name']=='model.safetensors'),
                   'manifestSHA256':sha256(SOURCE_MANIFEST)},
-        'environment':environment(),'minimumDeploymentTarget':'iOS17','computePrecision':'float16',
+        'environment':environment(),'minimumDeploymentTarget':'iOS17','computePrecision':PRECISIONS[key],
+        'computePrecisionReason':('preserve source near-tie ranking; FLOAT16 failed seeded_noise Top1 in run43132528504'
+                                  if key=='skin_type' else 'FLOAT16 validated against source PyTorch on five fixtures'),
         'input':{'name':'image','kind':'ImageType','colorLayout':'RGB','width':224,'height':224,
                  'scale':scale,'bias':bias,'sourceImageMean':means,'sourceImageStd':stds,
                  'resize':'caller resizes face crop to exactly224x224 using bilinear; not a full-photo detector'},
@@ -139,7 +146,8 @@ def convert_one(key: str, models_root: Path, output: Path, *, preflight: bool=Fa
     import coremltools as ct
     started=time.perf_counter()
     mlmodel=ct.convert(traced,source='pytorch',convert_to='mlprogram',
-        minimum_deployment_target=ct.target.iOS17,compute_precision=ct.precision.FLOAT16,
+        minimum_deployment_target=ct.target.iOS17,
+        compute_precision=ct.precision.FLOAT32 if PRECISIONS[key]=='float32' else ct.precision.FLOAT16,
         compute_units=ct.ComputeUnit.CPU_ONLY,
         inputs=[ct.ImageType(name='image',shape=(1,3,224,224),scale=scale,bias=bias,color_layout=ct.colorlayout.RGB)],
         outputs=[ct.TensorType(name='logits',dtype=np.float32)])
@@ -155,6 +163,7 @@ def convert_one(key: str, models_root: Path, output: Path, *, preflight: bool=Fa
     mlmodel.user_defined_metadata['ruyuan.source_sha256']=receipt['source']['modelSHA256']
     mlmodel.user_defined_metadata['ruyuan.input_scale']=repr(scale)
     mlmodel.user_defined_metadata['ruyuan.input_bias']=json.dumps(bias)
+    mlmodel.user_defined_metadata['ruyuan.compute_precision']=PRECISIONS[key]
     package=output/'models'/key/(key+'.mlpackage')
     package.parent.mkdir(parents=True,exist_ok=True)
     if package.exists():raise ValueError('output_package_already_exists')
@@ -177,11 +186,11 @@ def convert_one(key: str, models_root: Path, output: Path, *, preflight: bool=Fa
                 'maxAbsoluteLogitError':abs_error,'maxAbsoluteProbabilityError':probability_error,
                 'top1Matches':top1_match,'torchClass':labels[int(np.argmax(expected))],'coremlClass':labels[int(np.argmax(actual))]}
         receipt['validation']['samples'].append(sample)
-        # FP16 numerical conversion checks, NOT a statement about clinical accuracy.
+        # Numerical conversion checks, NOT a statement about clinical accuracy.
         if abs_error > 0.05 or probability_error > 0.01 or not top1_match:
             receipt['state']='parity_failed'
             (output/(key+'-coreml-manifest.json')).write_text(json.dumps(receipt,indent=2)+'\n')
-            raise ValueError('coreml_float16_parity_failed:'+name)
+            raise ValueError('coreml_parity_failed:'+PRECISIONS[key]+':'+name)
     receipt['state']='converted_and_coreml_cpu_verified'
     receipt['validation']['gates']={'maxAbsoluteLogitError':0.05,'maxAbsoluteProbabilityError':0.01,'allTop1Match':True}
     receipt['conversionAndVerificationSeconds']=round(time.perf_counter()-started,3)
@@ -194,7 +203,7 @@ def convert_one(key: str, models_root: Path, output: Path, *, preflight: bool=Fa
     record={'id':key,'package':package.relative_to(output).as_posix(),'repository':spec['repo'],
             'revision':spec['revision'],'license':spec['license'],'modelSHA256':receipt['source']['modelSHA256'],
             'classes':labels,'inputName':'image','outputName':'logits','inputSize':224,'lowConfidenceThreshold':0.60,
-            'inputScale':scale,'inputBias':bias,'computePrecision':'float16','minimumDeploymentTarget':'iOS17',
+            'inputScale':scale,'inputBias':bias,'computePrecision':PRECISIONS[key],'minimumDeploymentTarget':'iOS17',
             'files':[{'relativePath':(package.relative_to(output)/f['path']).as_posix(),'bytes':f['bytes'],'sha256':f['sha256']} for f in receipt['files']]}
     receipt['models']=[record]
     package_manifest=output/'model-manifest.json'

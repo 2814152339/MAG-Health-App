@@ -93,7 +93,7 @@ if [[ -f docs/models/coreml-artifacts.json ]]; then
   run_logged verify-classifier-models python3 scripts/install_coreml_artifacts.py --check
 fi
 run_logged generate-project python3 scripts/generate_xcode_project.py
-run_logged environment bash -c 'set -e; sw_vers; xcode-select -p; xcodebuild -version; xcrun --sdk iphonesimulator --show-sdk-version'
+run_logged environment bash -c 'set -e; uname -m; sw_vers; xcode-select -p; xcodebuild -version; xcrun --sdk iphonesimulator --show-sdk-version'
 SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
 xcrun simctl list runtimes --json > "$OUT/runtimes.json"
 xcrun simctl list devices available --json > "$OUT/devices.json"

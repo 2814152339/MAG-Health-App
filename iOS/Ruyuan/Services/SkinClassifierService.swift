@@ -143,7 +143,7 @@ enum SkinClassifierService {
             let distribution = zip(spec.classes, values).map { String(format: "%@ %.1f%%", $0.0, $0.1 * 100) }.joined(separator: " · ")
             report.skin[index].items.append(SkinItem(id: baseID + "-distribution", title: "模型类别分布",
                 valueText: distribution, note: "保留模型原始类别顺序。" + provenance, overlayID: nil))
-            report.modelVersion += "; \(spec.id)@\(spec.revision.prefix(12))-coreml-fp16"
+            report.modelVersion += "; \(spec.id)@\(spec.revision.prefix(12))-coreml"
         }
         report.quality.removeAll { $0.id == "trainedSkinModels" }
         report.quality.append(QualityCheck(id: "trainedSkinModels", title: "本机训练分类模型", passed: completed == specs.count,

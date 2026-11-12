@@ -120,7 +120,7 @@ def install(lock_path=LOCK, check=False):
             extracted = temporary / key; extracted.mkdir()
             with zipfile.ZipFile(inner) as archive:
                 entries = list(safe_files(archive))
-                if sum(i.file_size for i in entries) > 230_000_000: raise ValueError("oversize_model_archive")
+                if sum(i.file_size for i in entries) > 430_000_000: raise ValueError("oversize_model_archive")
                 archive.extractall(extracted, members=entries)
             manifest = json.loads((extracted/"model-manifest.json").read_text())
             if manifest["schema"] != 1 or manifest["state"] != "converted_and_coreml_cpu_verified" or len(manifest["models"]) != 1:

@@ -73,7 +73,7 @@ jobs:
           mkdir -p "$ARTIFACTS"
           python -u scripts/download_skin_models.py --models "$MODEL_ID" --workers 2 2>&1 | tee "$ARTIFACTS/download.log"
 
-      - name: Convert float16 and verify actual Core ML CPU outputs against PyTorch
+      - name: Convert per-model precision and verify actual Core ML CPU outputs against PyTorch
         shell: bash
         env:
           MODEL_ID: ${{ matrix.model }}
