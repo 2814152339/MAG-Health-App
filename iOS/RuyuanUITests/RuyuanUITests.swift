@@ -66,7 +66,7 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(isReachable(summaryHeading, in: app), "The conclusion must be visible on first opening, not merely exist offscreen.")
         let initialTop = detail.frame.minY
         let initialTopFraction = (initialTop - app.frame.minY) / app.frame.height
-        XCTAssertTrue((0.12...0.30).contains(initialTopFraction), "The initial sheet should cover about 80% of the screen, not open at the medium or full detent.")
+        XCTAssertTrue((0.16...0.24).contains(initialTopFraction), "The initial sheet should cover about 80% of the screen, not open at the medium or full detent.")
         let originalSummaryLabels = Set(summary.staticTexts.allElementsBoundByIndex.map(\.label))
         XCTAssertTrue(originalSummaryLabels.contains("总体结论"))
         capture("detail-initial-summary", app: app)

@@ -24,7 +24,7 @@ struct ReportView: View {
     let report: AnalysisReport
     @State private var selectedDimension: SkinDimension = .waterOil
     @State private var sheet: ReportSheet?
-    @State private var detailDetent: PresentationDetent = .fraction(0.8)
+    @State private var detailDetent: PresentationDetent = .fraction(0.85)
     @State private var inspection: InspectionTarget?
     @State private var exportError: String?
     @State private var feedbackChoice = ""
@@ -66,7 +66,7 @@ struct ReportView: View {
             switch destination {
             case .details:
                 ReportDetailSheet(report: report, initialDimension: selectedDimension)
-                    .presentationDetents([.medium, .fraction(0.8), .large], selection: $detailDetent)
+                    .presentationDetents([.medium, .fraction(0.85), .large], selection: $detailDetent)
                     .presentationDragIndicator(.visible).presentationCornerRadius(28)
             case .feedback:
                 ReportFeedbackEditor(initialNote: feedbackNote) { note in
@@ -260,7 +260,7 @@ struct ReportView: View {
 
     private func openDetails(_ dimension: SkinDimension) {
         selectedDimension = dimension
-        detailDetent = .fraction(0.8)
+        detailDetent = .fraction(0.85)
         sheet = .details
     }
     private var feedbackKey: String { "report.feedback.v1.\(report.id)" }
