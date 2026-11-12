@@ -125,7 +125,7 @@ final class AcneSegmentationServiceTests: XCTestCase {
         XCTAssertNil(AcneSegmentationService.cropPlan(imageWidth: 1000, imageHeight: 2000,
             faceBox: CGRect(x: -0.1, y: 0, width: 0.8, height: 1)))
         XCTAssertNil(AcneSegmentationService.cropPlan(imageWidth: 1000, imageHeight: 2000,
-            faceBox: CGRect(x: 0, y: 0, width: 1, height: .nan)))
+            faceBox: CGRect(x: 0, y: 0, width: 1, height: CGFloat.nan)))
     }
 
     func testNativeResolutionAndRealSemanticMaskRequiredBeforeInference() throws {

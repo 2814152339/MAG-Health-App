@@ -85,9 +85,9 @@ enum FaceSegmentationService {
             return definitions.map { category, id, title, color in
                 var paths: [[NormalizedPoint]] = []
                 var truncated = false
-                // Sample the actual mask into a bounded display grid; statistics use the full map.
-                let step = max(1, Int(ceil(Double(max(width, height)) / 192)))
-                for y in stride(from: 0, to: height, by: step) {
+                // Native mask pixels only: sampling one positive point must not paint its
+                // negative neighbors or bridge a landmark exclusion. The run cap bounds display.
+                for y in 0..<height {
                     var x = 0
                     while x < width {
                         func allowed(_ pixelX: Int) -> Bool {
@@ -97,17 +97,17 @@ enum FaceSegmentationService {
                             }
                             return accepts(category, x: px, y: py)
                         }
-                        guard allowed(x) else { x += step; continue }
+                        guard allowed(x) else { x += 1; continue }
                         let start = x
-                        while x < width && allowed(x) { x += step }
+                        while x < width && allowed(x) { x += 1 }
                         if paths.count >= 900 { truncated = true; break }
-                        let x0 = Double(start) / Double(width), x1 = Double(min(x, width)) / Double(width)
-                        let y0 = Double(y) / Double(height), y1 = Double(min(y + step, height)) / Double(height)
+                        let x0 = Double(start) / Double(width), x1 = Double(x) / Double(width)
+                        let y0 = Double(y) / Double(height), y1 = Double(y + 1) / Double(height)
                         paths.append([.init(x: x0, y: y0), .init(x: x1, y: y0), .init(x: x1, y: y1), .init(x: x0, y: y1)])
                     }
                     if truncated { break }
                 }
-                let note = "官方六分类模型类别\(category.rawValue)，置信度≥0.65；面部皮肤另限定本人人脸框并排除眼眉唇鼻孔。未将身体皮肤混作面部皮肤。" + (truncated ? " 显示最多900段；分析使用完整掩膜。" : " 图层来自本照片真实模型输出。")
+                let note = "官方六分类模型类别\(category.rawValue)，置信度≥0.65；面部皮肤另限定本人人脸框并排除眼眉唇鼻孔。未将身体皮肤混作面部皮肤。按原生掩膜像素连续行段显示，不跨负像素扩填。" + (truncated ? " 片段超过900，仅显示行序前900段；分析仍使用完整掩膜，未显示部分不表示没有候选。" : " 图层来自本照片真实模型输出。")
                 return OverlayLayer(id: id, title: title, colorHex: color, kind: .polygons, paths: paths, note: note, source: FaceSegmentationService.source)
             }
         }

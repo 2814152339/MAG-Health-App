@@ -57,6 +57,49 @@ final class FaceSegmentationServiceTests: XCTestCase {
         XCTAssertFalse(face.accepts(.faceSkin, x: -0.01, y: 0.5))
     }
 
+    func testNativeSemanticDisplayDoesNotExpandSparsePixelsOrBridgeNegativeGaps() throws {
+        let width = 384, height = 384
+        let positive: Set<Int> = [100 * width + 100, 100 * width + 102]
+        let input = try mask(width: width, height: height) { x, y in
+            positive.contains(y * width + x) ? .faceSkin : .background
+        }
+        let layer = try XCTUnwrap(input.overlays(landmarks: [:], faceBox: CGRect(x: 0, y: 0, width: 1, height: 1))
+            .first { $0.id == "semantic-face-skin" })
+        var displayed: Set<Int> = []
+        for points in layer.paths {
+            XCTAssertEqual(points.count, 4)
+            let x0 = Int((points[0].x * Double(width)).rounded()), x1 = Int((points[1].x * Double(width)).rounded())
+            let y0 = Int((points[0].y * Double(height)).rounded()), y1 = Int((points[2].y * Double(height)).rounded())
+            for y in y0..<y1 { for x in x0..<x1 { displayed.insert(y * width + x) } }
+        }
+        // The old step=2 renderer painted [100,104) x [100,102), including six negatives.
+        XCTAssertEqual(displayed, positive)
+        XCTAssertEqual(layer.paths.count, 2)
+    }
+
+    func testEveryNativeSemanticDisplayPixelRespectsFeatureBoundaryAndPathCap() throws {
+        let width = 384, height = 384
+        let input = try mask(width: width, height: height) { _, _ in .faceSkin }
+        let layer = try XCTUnwrap(input.overlays(landmarks: landmarks, faceBox: CGRect(x: 0, y: 0, width: 1, height: 1))
+            .first { $0.id == "semantic-face-skin" })
+        XCTAssertFalse(layer.paths.isEmpty)
+        XCTAssertLessThanOrEqual(layer.paths.count, 900)
+        var displayedPixels = 0
+        for points in layer.paths {
+            XCTAssertEqual(points.count, 4)
+            let x0 = Int((points[0].x * Double(width)).rounded()), x1 = Int((points[1].x * Double(width)).rounded())
+            let y0 = Int((points[0].y * Double(height)).rounded()), y1 = Int((points[2].y * Double(height)).rounded())
+            XCTAssertEqual(y1 - y0, 1, "Every displayed row is a native mask row, not an expanded tile")
+            for y in y0..<y1 { for x in x0..<x1 {
+                let px = (Double(x) + 0.5) / Double(width), py = (Double(y) + 0.5) / Double(height)
+                XCTAssertTrue(input.isFaceSkin(x: px, y: py, landmarks: landmarks),
+                    "Display crossed a Vision feature exclusion at \(x),\(y)")
+                displayedPixels += 1
+            } }
+        }
+        XCTAssertGreaterThan(displayedPixels, 0)
+    }
+
     func testOnlyActualStableHairToSkinBoundaryYieldsThreeRatios() throws {
         let input = try mask { _, y in y < 20 ? .hair : .faceSkin }
         let box = CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.9)
