@@ -1,0 +1,469 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "acne",
+      "runID": 43132528504,
+      "artifactID": 13906266060,
+      "archiveBytes": 171760926,
+      "archiveSHA256": "551572974ab446bb8b75c08977aecee5a45a300eb40a5254da93311b05d3d7a8",
+      "model": {
+        "id": "acne",
+        "package": "models/acne/acne.mlpackage",
+        "repository": "imfarzanansari/skintelligent-acne",
+        "revision": "f6ac6218b590f518d0a831472c7528b12bd53ae2",
+        "license": "mit",
+        "modelSHA256": "973ff1be5f2142c7daa6de784f39bf5838fdbaa73e816c107a1b8dafdc35571a",
+        "classes": [
+          "level -1",
+          "level 0",
+          "level 1",
+          "level 2",
+          "level 3"
+        ],
+        "inputName": "image",
+        "outputName": "logits",
+        "inputSize": 224,
+        "lowConfidenceThreshold": 0.6,
+        "inputScale": 0.00784313725490196,
+        "inputBias": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "computePrecision": "float16",
+        "minimumDeploymentTarget": "iOS17",
+        "files": [
+          {
+            "relativePath": "models/acne/acne.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+            "bytes": 137884,
+            "sha256": "4a3809ddf6e2b0d2da3d37532f262b0a2c090a31a7588b9a7d35836c0a6e8381"
+          },
+          {
+            "relativePath": "models/acne/acne.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+            "bytes": 171617792,
+            "sha256": "a074a1d4beff6c097e540d15ba7ac3a4520ef51fbaf6794573a42ad8c882df1e"
+          },
+          {
+            "relativePath": "models/acne/acne.mlpackage/Manifest.json",
+            "bytes": 617,
+            "sha256": "56c51541a0ee46c815cc15b4b0cfe1deee9ae0ef28f6c99db74dd759126fd520"
+          }
+        ]
+      },
+      "validation": {
+        "data": "five deterministic synthetic224RGB images only; no private photographs",
+        "preprocessMaxAbsoluteError": 1.1920928955078125e-07,
+        "traceMaxAbsoluteLogitError": 0.0,
+        "samples": [
+          {
+            "name": "uniform_rgb",
+            "torchLogits": [
+              1.6348650455474854,
+              -0.3259375989437103,
+              -0.41185852885246277,
+              -1.4811031818389893,
+              0.13100838661193848
+            ],
+            "coremlLogits": [
+              1.6552734375,
+              -0.3291015625,
+              -0.407470703125,
+              -1.482421875,
+              0.1317138671875
+            ],
+            "maxAbsoluteLogitError": 0.02040839195251465,
+            "maxAbsoluteProbabilityError": 0.004530100854865826,
+            "top1Matches": true,
+            "torchClass": "level -1",
+            "coremlClass": "level -1"
+          },
+          {
+            "name": "rgb_coordinate_ramp",
+            "torchLogits": [
+              1.591881513595581,
+              -0.18239501118659973,
+              -0.6408084034919739,
+              -0.9042317271232605,
+              0.0731269121170044
+            ],
+            "coremlLogits": [
+              1.595703125,
+              -0.18310546875,
+              -0.638671875,
+              -0.9111328125,
+              0.07745361328125
+            ],
+            "maxAbsoluteLogitError": 0.006901085376739502,
+            "maxAbsoluteProbabilityError": 0.0006895687506056625,
+            "top1Matches": true,
+            "torchClass": "level -1",
+            "coremlClass": "level -1"
+          },
+          {
+            "name": "seeded_noise",
+            "torchLogits": [
+              0.362501323223114,
+              0.32772886753082275,
+              -0.6505433320999146,
+              0.025021076202392578,
+              0.5114478468894958
+            ],
+            "coremlLogits": [
+              0.377685546875,
+              0.328125,
+              -0.6435546875,
+              0.02496337890625,
+              0.51611328125
+            ],
+            "maxAbsoluteLogitError": 0.015184223651885986,
+            "maxAbsoluteProbabilityError": 0.002290543378989679,
+            "top1Matches": true,
+            "torchClass": "level 3",
+            "coremlClass": "level 3"
+          },
+          {
+            "name": "checkerboard",
+            "torchLogits": [
+              1.7198188304901123,
+              -0.5191776752471924,
+              -0.34976711869239807,
+              -1.2449250221252441,
+              -0.26071271300315857
+            ],
+            "coremlLogits": [
+              1.7275390625,
+              -0.513671875,
+              -0.346435546875,
+              -1.2412109375,
+              -0.262451171875
+            ],
+            "maxAbsoluteLogitError": 0.007720232009887695,
+            "maxAbsoluteProbabilityError": 0.0011356245061914239,
+            "top1Matches": true,
+            "torchClass": "level -1",
+            "coremlClass": "level -1"
+          },
+          {
+            "name": "channel_stripes",
+            "torchLogits": [
+              0.514532744884491,
+              0.10218825936317444,
+              0.33183997869491577,
+              -0.009759590029716492,
+              -0.4654935598373413
+            ],
+            "coremlLogits": [
+              0.5107421875,
+              0.0992431640625,
+              0.335205078125,
+              -0.00948333740234375,
+              -0.461181640625
+            ],
+            "maxAbsoluteLogitError": 0.004311919212341309,
+            "maxAbsoluteProbabilityError": 0.0009981743149189426,
+            "top1Matches": true,
+            "torchClass": "level -1",
+            "coremlClass": "level -1"
+          }
+        ],
+        "gates": {
+          "maxAbsoluteLogitError": 0.05,
+          "maxAbsoluteProbabilityError": 0.01,
+          "allTop1Match": true
+        }
+      }
+    },
+    {
+      "id": "wrinkles",
+      "runID": 43132528504,
+      "artifactID": 13905862280,
+      "archiveBytes": 171755190,
+      "archiveSHA256": "eefb370269289c023b951bce1fc3c15167403eee0dad3ce277d9798848305c3d",
+      "model": {
+        "id": "wrinkles",
+        "package": "models/wrinkles/wrinkles.mlpackage",
+        "repository": "imfarzanansari/skintelligent-wrinkles",
+        "revision": "32ddddd41a7e035bbe3abbe4510e0a0ca4b6fb12",
+        "license": "mit",
+        "modelSHA256": "b779f987998b90193cd855eed27243fd5ebf8aa8fce7e178d7570372b50dae1c",
+        "classes": [
+          "non-wrinkle",
+          "wrinkle"
+        ],
+        "inputName": "image",
+        "outputName": "logits",
+        "inputSize": 224,
+        "lowConfidenceThreshold": 0.6,
+        "inputScale": 0.00784313725490196,
+        "inputBias": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "computePrecision": "float16",
+        "minimumDeploymentTarget": "iOS17",
+        "files": [
+          {
+            "relativePath": "models/wrinkles/wrinkles.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+            "bytes": 137859,
+            "sha256": "f5a1eb0f3d4afe666203960c2421234de252249511c68bd1036db980682c8bab"
+          },
+          {
+            "relativePath": "models/wrinkles/wrinkles.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+            "bytes": 171613184,
+            "sha256": "ab69faf5e75a1925c02d7c7d9017c308aaa50d159d68a2d6723dde0a48375130"
+          },
+          {
+            "relativePath": "models/wrinkles/wrinkles.mlpackage/Manifest.json",
+            "bytes": 617,
+            "sha256": "21faead03518488a31b6c59aab9d313d1b6704944db6e151a3efbf3473ae3786"
+          }
+        ]
+      },
+      "validation": {
+        "data": "five deterministic synthetic224RGB images only; no private photographs",
+        "preprocessMaxAbsoluteError": 1.1920928955078125e-07,
+        "traceMaxAbsoluteLogitError": 0.0,
+        "samples": [
+          {
+            "name": "uniform_rgb",
+            "torchLogits": [
+              0.26973748207092285,
+              -0.5368567705154419
+            ],
+            "coremlLogits": [
+              0.27099609375,
+              -0.537109375
+            ],
+            "maxAbsoluteLogitError": 0.0012586116790771484,
+            "maxAbsoluteProbabilityError": 0.0003223585827089037,
+            "top1Matches": true,
+            "torchClass": "non-wrinkle",
+            "coremlClass": "non-wrinkle"
+          },
+          {
+            "name": "rgb_coordinate_ramp",
+            "torchLogits": [
+              0.8690581321716309,
+              -0.8374937772750854
+            ],
+            "coremlLogits": [
+              0.86767578125,
+              -0.8359375
+            ],
+            "maxAbsoluteLogitError": 0.0015562772750854492,
+            "maxAbsoluteProbabilityError": 0.0003824547613608953,
+            "top1Matches": true,
+            "torchClass": "non-wrinkle",
+            "coremlClass": "non-wrinkle"
+          },
+          {
+            "name": "seeded_noise",
+            "torchLogits": [
+              0.24692216515541077,
+              -1.0368221998214722
+            ],
+            "coremlLogits": [
+              0.248046875,
+              -1.0390625
+            ],
+            "maxAbsoluteLogitError": 0.002240300178527832,
+            "maxAbsoluteProbabilityError": 0.0005710429829228758,
+            "top1Matches": true,
+            "torchClass": "non-wrinkle",
+            "coremlClass": "non-wrinkle"
+          },
+          {
+            "name": "checkerboard",
+            "torchLogits": [
+              0.3487364947795868,
+              -0.6414949297904968
+            ],
+            "coremlLogits": [
+              0.3486328125,
+              -0.64453125
+            ],
+            "maxAbsoluteLogitError": 0.003036320209503174,
+            "maxAbsoluteProbabilityError": 0.0005788001298976386,
+            "top1Matches": true,
+            "torchClass": "non-wrinkle",
+            "coremlClass": "non-wrinkle"
+          },
+          {
+            "name": "channel_stripes",
+            "torchLogits": [
+              0.35789063572883606,
+              -0.7924232482910156
+            ],
+            "coremlLogits": [
+              0.364501953125,
+              -0.79638671875
+            ],
+            "maxAbsoluteLogitError": 0.00661131739616394,
+            "maxAbsoluteProbabilityError": 0.0019259091744004975,
+            "top1Matches": true,
+            "torchClass": "non-wrinkle",
+            "coremlClass": "non-wrinkle"
+          }
+        ],
+        "gates": {
+          "maxAbsoluteLogitError": 0.05,
+          "maxAbsoluteProbabilityError": 0.01,
+          "allTop1Match": true
+        }
+      }
+    },
+    {
+      "id": "skin_type",
+      "runID": 43133491210,
+      "artifactID": 13906840416,
+      "archiveBytes": 343344789,
+      "archiveSHA256": "a8f5d7231fa319c2619ff02bc2be268171ed3a2a9642357a2aeeec92ee5110ef",
+      "model": {
+        "id": "skin_type",
+        "package": "models/skin_type/skin_type.mlpackage",
+        "repository": "dima806/skin_types_image_detection",
+        "revision": "5aace4f4df0ba3265a07fbddab12a4ad38e0f6a6",
+        "license": "apache-2.0",
+        "modelSHA256": "572185743c6be523efcc72b71f12c089cb81baf54525a1831b333544ba47224a",
+        "classes": [
+          "dry",
+          "normal",
+          "oily"
+        ],
+        "inputName": "image",
+        "outputName": "logits",
+        "inputSize": 224,
+        "lowConfidenceThreshold": 0.6,
+        "inputScale": 0.00784313725490196,
+        "inputBias": [
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "computePrecision": "float32",
+        "minimumDeploymentTarget": "iOS17",
+        "files": [
+          {
+            "relativePath": "models/skin_type/skin_type.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+            "bytes": 123829,
+            "sha256": "82ab3a66e84edf0740682ffcf40c954973855f0f71a172ff3e7accb67a370403"
+          },
+          {
+            "relativePath": "models/skin_type/skin_type.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+            "bytes": 343216640,
+            "sha256": "dce885ca5612d2601a4ab78504f4ceafa97d10fec756c38d04d52ee5dd2ca47d"
+          },
+          {
+            "relativePath": "models/skin_type/skin_type.mlpackage/Manifest.json",
+            "bytes": 617,
+            "sha256": "f729465fd7d566e68105b7a83bbc90f401e524aede4fc176ab22439232796002"
+          }
+        ]
+      },
+      "validation": {
+        "data": "five deterministic synthetic224RGB images only; no private photographs",
+        "preprocessMaxAbsoluteError": 1.1920928955078125e-07,
+        "traceMaxAbsoluteLogitError": 0.0,
+        "samples": [
+          {
+            "name": "uniform_rgb",
+            "torchLogits": [
+              -0.2357252836227417,
+              0.20236028730869293,
+              -0.16734559834003448
+            ],
+            "coremlLogits": [
+              -0.23572522401809692,
+              0.2023603916168213,
+              -0.16734544932842255
+            ],
+            "maxAbsoluteLogitError": 1.4901161193847656e-07,
+            "maxAbsoluteProbabilityError": 1.2962691864348841e-08,
+            "top1Matches": true,
+            "torchClass": "normal",
+            "coremlClass": "normal"
+          },
+          {
+            "name": "rgb_coordinate_ramp",
+            "torchLogits": [
+              -0.06916125863790512,
+              0.06502693891525269,
+              -0.11232127249240875
+            ],
+            "coremlLogits": [
+              -0.06916143745183945,
+              0.06502696871757507,
+              -0.11232128739356995
+            ],
+            "maxAbsoluteLogitError": 1.7881393432617188e-07,
+            "maxAbsoluteProbabilityError": 4.112545154422165e-08,
+            "top1Matches": true,
+            "torchClass": "normal",
+            "coremlClass": "normal"
+          },
+          {
+            "name": "seeded_noise",
+            "torchLogits": [
+              0.02927580662071705,
+              0.030364014208316803,
+              -0.28381985425949097
+            ],
+            "coremlLogits": [
+              0.029275773093104362,
+              0.030364003032445908,
+              -0.28381994366645813
+            ],
+            "maxAbsoluteLogitError": 8.940696716308594e-08,
+            "maxAbsoluteProbabilityError": 1.3143644728152992e-08,
+            "top1Matches": true,
+            "torchClass": "normal",
+            "coremlClass": "normal"
+          },
+          {
+            "name": "checkerboard",
+            "torchLogits": [
+              -0.23545575141906738,
+              0.23670801520347595,
+              -0.22881942987442017
+            ],
+            "coremlLogits": [
+              -0.2354557067155838,
+              0.23670798540115356,
+              -0.2288196086883545
+            ],
+            "maxAbsoluteLogitError": 1.7881393432617188e-07,
+            "maxAbsoluteProbabilityError": 3.5719509239307e-08,
+            "top1Matches": true,
+            "torchClass": "normal",
+            "coremlClass": "normal"
+          },
+          {
+            "name": "channel_stripes",
+            "torchLogits": [
+              0.06803718209266663,
+              0.10956542193889618,
+              -0.011300981044769287
+            ],
+            "coremlLogits": [
+              0.06803733855485916,
+              0.1095653548836708,
+              -0.011300962418317795
+            ],
+            "maxAbsoluteLogitError": 1.564621925354004e-07,
+            "maxAbsoluteProbabilityError": 4.095484984478759e-08,
+            "top1Matches": true,
+            "torchClass": "normal",
+            "coremlClass": "normal"
+          }
+        ],
+        "gates": {
+          "maxAbsoluteLogitError": 0.05,
+          "maxAbsoluteProbabilityError": 0.01,
+          "allTop1Match": true
+        }
+      }
+    }
+  ]
+}

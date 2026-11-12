@@ -559,7 +559,9 @@ private struct ReportDetailSheet: View {
         guard item.id.hasPrefix("trained-") else { return item.valueText }
         var value = item.valueText
         let statuses = ["runtime_not_installed": "未安装推理运行库", "checksum_mismatch": "模型校验未通过",
-                        "not_downloaded": "模型尚未下载", "inference_failed": "本次推理失败", "disabled": "未启用"]
+                        "not_downloaded": "模型尚未下载", "not_bundled": "本安装包未包含该模型",
+                        "metadata_mismatch": "模型版本信息校验未通过", "invalid_input": "本次面部裁剪不可用",
+                        "invalid_output": "本次模型输出无效", "inference_failed": "本次推理失败", "disabled": "未启用"]
         for (raw, chinese) in statuses { value = value.replacingOccurrences(of: raw, with: chinese + "（" + raw + "）") }
         let labels: [(String, String)]
         if item.id.hasPrefix("trained-skin_type") {

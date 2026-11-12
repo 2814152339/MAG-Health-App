@@ -20,7 +20,7 @@ final class SkinClassifierServiceTests: XCTestCase {
         let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
         let image = try XCTUnwrap(CGImage(width: 224, height: 224, bitsPerComponent: 8, bitsPerPixel: 32,
             bytesPerRow: 224*4, space: space,
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         for spec in SkinClassifierService.specs {
             let record = try XCTUnwrap(records.first { $0["id"] as? String == spec.id })
@@ -47,12 +47,20 @@ final class SkinClassifierServiceTests: XCTestCase {
     func testPinnedMetadataRejectsWrongClassOrderOrRevision() throws {
         let spec = SkinClassifierService.specs[0]
         let classes = String(data: try JSONEncoder().encode(spec.classes), encoding: .utf8)!
-        var metadata = ["ruyuan.revision": spec.revision, "ruyuan.source_sha256": spec.digest, "ruyuan.class_names": classes]
+        var metadata = ["ruyuan.revision": spec.revision, "ruyuan.source_sha256": spec.digest, "ruyuan.class_names": classes,
+                        "ruyuan.repository": "imfarzanansari/skintelligent-acne", "ruyuan.compute_precision": "float16",
+                        "ruyuan.input_scale": String(2.0 / 255.0), "ruyuan.input_bias": "[-1,-1,-1]"]
         XCTAssertNoThrow(try SkinClassifierService.validateMetadata(metadata, spec: spec))
         metadata["ruyuan.revision"] = "different"
         XCTAssertThrowsError(try SkinClassifierService.validateMetadata(metadata, spec: spec))
         metadata["ruyuan.revision"] = spec.revision
         metadata["ruyuan.class_names"] = "[]"
+        XCTAssertThrowsError(try SkinClassifierService.validateMetadata(metadata, spec: spec))
+        metadata["ruyuan.class_names"] = classes
+        metadata["ruyuan.input_scale"] = "1"
+        XCTAssertThrowsError(try SkinClassifierService.validateMetadata(metadata, spec: spec))
+        metadata["ruyuan.input_scale"] = String(2.0 / 255.0)
+        metadata["ruyuan.input_bias"] = "[0,0,0]"
         XCTAssertThrowsError(try SkinClassifierService.validateMetadata(metadata, spec: spec))
     }
     func testClassificationDoesNotReplaceScoresOrInventMasks() throws {
@@ -71,5 +79,36 @@ final class SkinClassifierServiceTests: XCTestCase {
         let item = report.skin.flatMap(\.items).first { $0.id == "trained-acne" }
         XCTAssertEqual(item?.valueText, "未运行 · metadata_mismatch")
         XCTAssertFalse(report.quality.first { $0.id == "trainedSkinModels" }!.passed)
+    }
+
+    func testMalformedProbabilityDistributionNeverDisplaysInventedConfidence() {
+        let spec = SkinClassifierService.specs[0]
+        for probabilities in [[Double.nan, 0, 0, 0, 1], [-1, 1, 0, 0, 1], [0.7, 0.7, 0, 0, 0]] {
+            let observation = SkinClassifierService.Observation(spec: spec, probabilities: probabilities, state: "ready", elapsed: 1)
+            let report = SkinClassifierService.applying([observation], to: SampleData.report)
+            let item = report.skin.flatMap(\.items).first { $0.id == "trained-acne" }
+            XCTAssertTrue(item?.valueText.hasPrefix("未运行") ?? false)
+            XCTAssertFalse(report.quality.first { $0.id == "trainedSkinModels" }!.passed)
+        }
+    }
+
+    func testVisionBottomLeftFaceCropUsesActualTopLeftRGBRowsAndRejectsInvalidBoxes() throws {
+        let width = 100, height = 100
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height { for x in 0..<width {
+            let i = (y * width + x) * 4
+            pixels[i] = y < 50 ? 250 : 0; pixels[i + 1] = 0; pixels[i + 2] = y < 50 ? 0 : 250
+        } }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(pixels) as CFData))
+        let image = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let bottom = try XCTUnwrap(SkinClassifierService.faceCrop(image, faceBox: CGRect(x: 0.1, y: 0.05, width: 0.4, height: 0.4)))
+        let raster = try XCTUnwrap(LocalAnalyzer.makeRaster(bottom))
+        XCTAssertEqual(raster.rgb(x: 0, y: 0).0, 0, accuracy: 0.001)
+        XCTAssertEqual(raster.rgb(x: 0, y: 0).2, 250.0 / 255, accuracy: 0.001)
+        XCTAssertNil(SkinClassifierService.faceCrop(image, faceBox: CGRect(x: -0.2, y: 0.1, width: 0.6, height: 0.6)))
+        XCTAssertNil(SkinClassifierService.faceCrop(image, faceBox: CGRect(x: 0.1, y: 0.1, width: 0.01, height: 0.01)))
     }
 }

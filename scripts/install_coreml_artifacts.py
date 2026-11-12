@@ -46,16 +46,63 @@ def request_artifact(artifact_id, token):
 
 
 def safe_files(archive):
+    if len(archive.infolist()) > 200: raise ValueError("too_many_artifact_entries")
     for info in archive.infolist():
         path = PurePosixPath(info.filename)
-        if path.is_absolute() or ".." in path.parts or "\\" in info.filename:
+        if path.is_absolute() or ".." in path.parts or "\\" in info.filename or ":" in info.filename:
             raise ValueError("unsafe_artifact_member")
         # Disallow symbolic links even in authenticated build output.
         if (info.external_attr >> 16) & 0o170000 == 0o120000: raise ValueError("artifact_symlink")
         yield info
 
 
-def verify_package(root, record, source_specs):
+def copy_bounded(source, destination, limit):
+    total = 0
+    while True:
+        block = source.read(min(4*1024*1024, limit-total+1))
+        if not block: return total
+        total += len(block)
+        if total > limit: raise ValueError("artifact_byte_budget_exceeded")
+        destination.write(block)
+
+
+def installed_files(record):
+    key = record["id"]
+    return [{**f, "relativePath": key+".mlpackage/"+f["relativePath"].split(key+".mlpackage/", 1)[1]} for f in record["files"]]
+
+
+def verify_installed(destination, lock, specs):
+    manifest = json.loads((destination/"coreml-model-manifest.json").read_text())
+    ids = [m["id"] for m in manifest["models"]]
+    if manifest["schema"] != 1 or len(ids) != len(set(ids)) or set(ids) != set(specs):
+        raise ValueError("incomplete_installed_model_manifest")
+    expected_packages = {pin["id"]+".mlpackage" for pin in lock["models"]}
+    if {p.name for p in destination.glob("*.mlpackage")} != expected_packages:
+        raise ValueError("unexpected_installed_model_package")
+    for pin in lock["models"]:
+        approved = pin["model"]
+        verify_contract(approved, specs)
+        record = next(m for m in manifest["models"] if m["id"] == pin["id"])
+        if any(record.get(key) != value for key, value in approved.items()):
+            raise ValueError("installed_model_differs_from_approved_pin")
+        files = installed_files(approved)
+        if record.get("installedFiles") != files: raise ValueError("installed_file_manifest_differs_from_approved_pin")
+        expected = set()
+        for file in files:
+            path = PurePosixPath(file["relativePath"])
+            if path.is_absolute() or ".." in path.parts or "\\" in file["relativePath"] or ":" in file["relativePath"]:
+                raise ValueError("unsafe_installed_file_path")
+            target = destination.joinpath(*path.parts)
+            if not target.resolve().is_relative_to(destination.resolve()): raise ValueError("installed_file_outside_resources")
+            if not target.is_file() or target.stat().st_size != file["bytes"] or digest(target) != file["sha256"]:
+                raise ValueError("installed_coreml_digest_mismatch")
+            expected.add(path.as_posix())
+        actual = {p.relative_to(destination).as_posix() for p in (destination/(pin["id"]+".mlpackage")).rglob("*") if p.is_file()}
+        if actual != expected: raise ValueError("unverified_extra_installed_file")
+        print("Verified installed package:", pin["id"])
+
+
+def verify_contract(record, source_specs):
     spec = source_specs[record["id"]]
     weight = next(f for f in spec["files"] if f["name"] == "model.safetensors")
     if record["revision"] != spec["revision"] or record["repository"] != spec["repo"] or record["modelSHA256"] != weight["sha256"]:
@@ -64,10 +111,14 @@ def verify_package(root, record, source_specs):
         raise ValueError("unexpected_package_path")
     if record["inputSize"] != 224 or record["inputName"] != "image" or record["outputName"] != "logits":
         raise ValueError("unexpected_model_contract")
+
+
+def verify_package(root, record, source_specs):
+    verify_contract(record, source_specs)
     expected = set()
     for entry in record["files"]:
         path = PurePosixPath(entry["relativePath"])
-        if path.is_absolute() or ".." in path.parts or not str(path).startswith(record["package"] + "/"):
+        if path.is_absolute() or ".." in path.parts or ":" in str(path) or "\\" in str(path) or not str(path).startswith(record["package"] + "/"):
             raise ValueError("unexpected_package_file")
         file = root.joinpath(*path.parts)
         if not file.is_file() or file.stat().st_size != entry["bytes"] or digest(file) != entry["sha256"]:
@@ -86,6 +137,10 @@ def install(lock_path=LOCK, check=False):
     specs = {s["id"]: s for s in json.loads((ROOT/"backend/ruyuan/skin_model_manifest.json").read_text())["models"]}
     if lock["schema"] != 1 or {m["id"] for m in lock["models"]} != set(specs):
         raise ValueError("incomplete_coreml_lock")
+    if len(lock["models"]) != len(specs): raise ValueError("duplicate_coreml_lock_id")
+    if check:
+        verify_installed(DEST, lock, specs)
+        return
     ROOT.joinpath(".build").mkdir(exist_ok=True)
     token = os.environ.get("GITHUB_TOKEN", "")
     with tempfile.TemporaryDirectory(prefix="coreml-install-", dir=ROOT/".build") as temporary:
@@ -94,27 +149,19 @@ def install(lock_path=LOCK, check=False):
         records = []
         for pin in lock["models"]:
             key = pin["id"]
-            if check:
-                manifest = json.loads((DEST/"coreml-model-manifest.json").read_text())
-                record = next(m for m in manifest["models"] if m["id"] == key)
-                for file in record["installedFiles"]:
-                    target = DEST / file["relativePath"]
-                    if not target.is_file() or target.stat().st_size != file["bytes"] or digest(target) != file["sha256"]:
-                        raise ValueError("installed_coreml_digest_mismatch")
-                print("Verified installed package:", key)
-                continue
             if not token: raise RuntimeError("GITHUB_TOKEN_required_for_private_artifact_download")
             outer = temporary / (key + "-action.zip")
             url = request_artifact(int(pin["artifactID"]), token)
             # New request intentionally does NOT forward GitHub Authorization to storage.
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Ruyuan-CoreML-Bundle"}), timeout=180) as source, outer.open("wb") as destination:
-                shutil.copyfileobj(source, destination, 4*1024*1024)
+                copy_bounded(source, destination, pin["archiveBytes"] + 2_000_000)
             inner = temporary / (key + ".zip")
             with zipfile.ZipFile(outer) as archive:
                 entries = [i for i in safe_files(archive) if i.filename.endswith("Ruyuan-CoreML-" + key + ".zip")]
                 if len(entries) != 1: raise ValueError("missing_verified_model_archive")
+                if entries[0].file_size != pin["archiveBytes"]: raise ValueError("wrong_model_archive_size")
                 with archive.open(entries[0]) as source, inner.open("wb") as destination:
-                    shutil.copyfileobj(source, destination, 4*1024*1024)
+                    copy_bounded(source, destination, pin["archiveBytes"])
             if inner.stat().st_size != pin["archiveBytes"] or digest(inner) != pin["archiveSHA256"]:
                 raise ValueError("coreml_archive_digest_mismatch")
             extracted = temporary / key; extracted.mkdir()
@@ -127,14 +174,14 @@ def install(lock_path=LOCK, check=False):
                 raise ValueError("unverified_conversion")
             record = manifest["models"][0]
             if record["id"] != key: raise ValueError("wrong_model_artifact")
+            if record != pin["model"]: raise ValueError("artifact_model_differs_from_approved_pin")
             verify_package(extracted, record, specs)
             shutil.copytree(extracted/record["package"], staged/(key+".mlpackage"))
             shutil.copytree(extracted/"models"/key/"source-notices", staged/"source-notices"/key)
-            record["installedFiles"] = [{**f, "relativePath": key+".mlpackage/"+f["relativePath"].split(key+".mlpackage/", 1)[1]} for f in record["files"]]
+            record["installedFiles"] = installed_files(pin["model"])
             record["validation"] = pin["validation"]
             records.append(record)
             print("Installed hash-verified trained model:", key)
-        if check: return
         (staged/"coreml-model-manifest.json").write_text(json.dumps({"schema": 1, "models": records}, indent=2)+"\n", encoding="utf-8")
         if DEST.resolve().parent != (ROOT/"iOS/Ruyuan/Resources").resolve(): raise RuntimeError("unexpected_destination")
         if DEST.exists():

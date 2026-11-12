@@ -1,4 +1,5 @@
 import CoreML
+import CoreVideo
 import Foundation
 import UIKit
 import Vision
@@ -49,8 +50,20 @@ enum SkinClassifierService {
     }
 
     static func validateMetadata(_ metadata: [String: String], spec: Spec) throws {
+        let repository = spec.id == "skin_type" ? "dima806/skin_types_image_detection" : "imfarzanansari/skintelligent-" + spec.id
+        let precision = spec.id == "skin_type" ? "float32" : "float16"
         guard metadata["ruyuan.revision"] == spec.revision,
               metadata["ruyuan.source_sha256"] == spec.digest,
+              metadata["ruyuan.repository"] == repository,
+              // The first two approved FP16 artifacts predate this metadata key.
+              // Their complete package bytes are pinned by the bundle installer.
+              (metadata["ruyuan.compute_precision"] == precision ||
+               (spec.id != "skin_type" && metadata["ruyuan.compute_precision"] == nil)),
+              let scaleText = metadata["ruyuan.input_scale"], let scale = Double(scaleText), scale.isFinite,
+              abs(scale - 2.0 / 255.0) < 1e-15,
+              let biasData = metadata["ruyuan.input_bias"]?.data(using: .utf8),
+              let bias = try? JSONDecoder().decode([Double].self, from: biasData),
+              bias == [-1, -1, -1],
               let encoded = metadata["ruyuan.class_names"]?.data(using: .utf8),
               let classes = try? JSONDecoder().decode([String].self, from: encoded),
               classes == spec.classes else { throw Failure.metadataMismatch }
@@ -65,13 +78,19 @@ enum SkinClassifierService {
     static func predict(image: CGImage, spec: Spec, bundle: Bundle = .main) throws -> [Double] {
         guard let url = modelURL(spec: spec, bundle: bundle) else { throw Failure.missingModel }
         let configuration = MLModelConfiguration()
-        configuration.computeUnits = .all
+        // These packages passed CPU_ONLY conversion parity. In particular, the source skin-type
+        // checkpoint has a verified near-tie that FLOAT16 changed; do not silently switch hardware
+        // until all reference fixtures pass on that hardware too.
+        configuration.computeUnits = .cpuOnly
         let model = try MLModel(contentsOf: url, configuration: configuration)
         let metadata = model.modelDescription.metadata[MLModelMetadataKey.creatorDefinedKey] as? [String: String] ?? [:]
         try validateMetadata(metadata, spec: spec)
         guard let constraint = model.modelDescription.inputDescriptionsByName["image"]?.imageConstraint,
               constraint.pixelsWide == 224, constraint.pixelsHigh == 224,
-              model.modelDescription.outputDescriptionsByName["logits"] != nil else { throw Failure.invalidInput }
+              constraint.pixelFormatType == kCVPixelFormatType_32BGRA,
+              let outputConstraint = model.modelDescription.outputDescriptionsByName["logits"]?.multiArrayConstraint,
+              outputConstraint.dataType == .float32,
+              outputConstraint.shape.map(\.intValue) == [1, spec.classes.count] else { throw Failure.invalidInput }
         let input = try MLFeatureValue(cgImage: image, constraint: constraint,
                                       options: [.cropAndScale: VNImageCropAndScaleOption.scaleFill.rawValue])
         let provider = try MLDictionaryFeatureProvider(dictionary: ["image": input])
@@ -88,7 +107,8 @@ enum SkinClassifierService {
                                 width: faceBox.width, height: faceBox.height)
         guard normalized.minX.isFinite, normalized.minY.isFinite,
               normalized.width.isFinite, normalized.height.isFinite,
-              normalized.width > 0, normalized.height > 0 else { return nil }
+              normalized.width > 0, normalized.height > 0,
+              normalized.minX >= 0, normalized.maxX <= 1, normalized.minY >= 0, normalized.maxY <= 1 else { return nil }
         let rect = CGRect(x: normalized.minX * full.width, y: normalized.minY * full.height,
                           width: normalized.width * full.width, height: normalized.height * full.height)
             .insetBy(dx: -normalized.width * full.width * 0.025, dy: -normalized.height * full.height * 0.025)
@@ -101,18 +121,18 @@ enum SkinClassifierService {
         let crop = faceCrop(image, faceBox: faceBox)
         return try specs.map { spec in
             try Task.checkCancellation()
-            let started = Date()
+            let started = ProcessInfo.processInfo.systemUptime
             return autoreleasepool {
                 guard let crop else { return Observation(spec: spec, probabilities: nil, state: "invalid_input", elapsed: 0) }
                 do {
                     let values = try predict(image: crop, spec: spec)
-                    return Observation(spec: spec, probabilities: values, state: "ready", elapsed: Date().timeIntervalSince(started))
+                    return Observation(spec: spec, probabilities: values, state: "ready", elapsed: ProcessInfo.processInfo.systemUptime - started)
                 } catch Failure.missingModel {
                     return Observation(spec: spec, probabilities: nil, state: "not_bundled", elapsed: 0)
                 } catch Failure.metadataMismatch {
                     return Observation(spec: spec, probabilities: nil, state: "metadata_mismatch", elapsed: 0)
                 } catch {
-                    return Observation(spec: spec, probabilities: nil, state: "inference_failed", elapsed: Date().timeIntervalSince(started))
+                    return Observation(spec: spec, probabilities: nil, state: "inference_failed", elapsed: ProcessInfo.processInfo.systemUptime - started)
                 }
             }
         }
@@ -126,11 +146,14 @@ enum SkinClassifierService {
             guard let index = report.skin.firstIndex(where: { $0.dimension == spec.dimension }) else { continue }
             let baseID = "trained-" + spec.id
             report.skin[index].items.removeAll { $0.id == baseID || $0.id == baseID + "-distribution" }
-            let provenance = "Core ML 本机推理；固定版本 \(spec.revision)，原权重 SHA256 \(spec.digest)。"
-            guard let values = observation.probabilities, values.count == spec.classes.count,
+            let provenance = "Core ML 本机CPU推理；固定版本 \(spec.revision)，原权重 SHA256 \(spec.digest)。"
+            guard observation.state == "ready", observation.elapsed.isFinite, observation.elapsed >= 0,
+                  let values = observation.probabilities, values.count == spec.classes.count,
+                  values.allSatisfy({ $0.isFinite && (0...1).contains($0) }),
+                  abs(values.reduce(0, +) - 1) < 1e-6,
                   let best = values.indices.max(by: { values[$0] < values[$1] }) else {
                 report.skin[index].items.append(SkinItem(id: baseID, title: spec.title,
-                    valueText: "未运行 · " + observation.state,
+                    valueText: "未运行 · " + (observation.state == "ready" ? "invalid_output" : observation.state),
                     note: provenance + "本次没有分类结果，不补造类别或置信度。", overlayID: nil))
                 continue
             }

@@ -56,7 +56,8 @@ final class DepthMeasurementServiceTests: XCTestCase {
     }
 
     func testRelativeRadialLUTCorrectionAndRoundTripAreNotIgnored() throws {
-        let input = snapshot(direct: [0.1, 0.1], inverse: [-1.0 / 11, -1.0 / 11])
+        let inverse = -Float(1) / 11
+        let input = snapshot(direct: [0.1, 0.1], inverse: [inverse, inverse])
         let mapped = try XCTUnwrap(DepthMeasurementService.radialMap(x: 384, y: 320, snapshot: input, table: input.inverseLensDistortion))
         XCTAssertEqual(mapped.x, 320 + 64 / 1.1, accuracy: 0.0001)
         let metrics = DepthMeasurementService.metrics(snapshot: input, landmarks: nose, imageWidth: 640, imageHeight: 640)
