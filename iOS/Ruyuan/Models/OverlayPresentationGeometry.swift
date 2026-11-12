@@ -19,8 +19,11 @@ enum OverlayPresentationGeometry {
               let first = eye(named: "leftEye", in: landmarks),
               let second = eye(named: "rightEye", in: landmarks),
               !first.bounds.intersects(second.bounds) else { return [] }
-        let eyes = [first, second].sorted {
-            $0.center.x == $1.center.x ? $0.center.y < $1.center.y : $0.center.x < $1.center.x
+        let eyes: [Eye] = [first, second].sorted { (lhs: Eye, rhs: Eye) -> Bool in
+            if lhs.center.x == rhs.center.x {
+                return lhs.center.y < rhs.center.y
+            }
+            return lhs.center.x < rhs.center.x
         }
         guard eyes[0].center != eyes[1].center else { return [] }
         var envelopes: [CGRect?] = [nil, nil]
