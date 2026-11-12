@@ -10,6 +10,7 @@ struct ScanGeometryDrawing: View {
     let elapsed: Double
     let reduceMotion: Bool
     let angleProgress: Double
+    var samplingRegions: [CGRect] = []
 
     private let violet = Color(hex: "7377FF")
 
@@ -144,6 +145,17 @@ struct ScanGeometryDrawing: View {
 
     private func drawObservedLayer(_ layer: OverlayLayer, progress: Double, context: inout GraphicsContext) {
         guard progress > 0 else { return }
+        if layer.id == "appearance-under-eye" {
+            for region in samplingRegions {
+                let start = transform.position(.init(x: Double(region.minX), y: Double(region.minY)))
+                let end = transform.position(.init(x: Double(region.maxX), y: Double(region.maxY)))
+                let rect = CGRect(x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y)
+                let outline = Path(roundedRect: rect, cornerRadius: 4).trimmedPath(from: 0, to: CGFloat(progress))
+                context.stroke(outline, with: .color(.white.opacity(0.9)),
+                               style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 3]))
+            }
+            return
+        }
         let color = Color(hex: layer.colorHex)
         var drawing = context
         drawing.opacity = progress

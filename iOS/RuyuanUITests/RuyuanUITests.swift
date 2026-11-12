@@ -252,6 +252,13 @@ final class RuyuanUITests: XCTestCase {
                 XCTAssertTrue(waitUntil { (photo.value as? String)?.contains("局部") == true },
                               "Brow and eye scenes must focus on this synthetic report's real ROI points.")
             }
+            if index == 9 {
+                let rangeNotice = identified("scanEyeSamplingRangeNotice", in: app)
+                XCTAssertTrue(rangeNotice.exists,
+                              "Existing synthetic sampling rows must render as labelled thin ranges, not opaque false lesion masks.")
+                XCTAssertFalse(rangeNotice.frame.intersects(identified("scanMeasurementPanel", in: app).frame),
+                               "The sampling explanation must not be hidden underneath the result panel.")
+            }
             capture(String(format: "scanner-%02d", index + 1), app: app)
             if index < titles.count - 1 { next.tap() }
         }

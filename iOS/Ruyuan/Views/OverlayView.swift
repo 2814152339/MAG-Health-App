@@ -11,6 +11,10 @@ struct ReportPhotoView: View {
     var body: some View {
         GeometryReader { proxy in
             let fitted = aspectFitSize(in: proxy.size)
+            let sampling = layers.first(where: { $0.id == "appearance-under-eye" }).map {
+                OverlayPresentationGeometry.eyeSamplingRegions(for: $0, landmarks: report.landmarks,
+                    imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
+            } ?? []
             ZStack {
                 if let image {
                     Image(uiImage: image).resizable().scaledToFit()
@@ -25,8 +29,8 @@ struct ReportPhotoView: View {
                     .foregroundStyle(RuyuanStyle.muted)
                 }
                 if image != nil || report.isSample {
-                    NormalizedOverlayDrawing(layers: layers,
-                                             landmarks: showsLandmarks ? report.landmarks : [])
+                    NormalizedOverlayDrawing(layers: layers.filter { $0.id != "appearance-under-eye" },
+                                             landmarks: showsLandmarks ? report.landmarks : [], samplingRegions: sampling)
                 }
             }
             .frame(width: fitted.width, height: fitted.height)
@@ -102,9 +106,16 @@ struct FocusedReportPhotoView: View {
 struct NormalizedOverlayDrawing: View {
     let layers: [OverlayLayer]
     let landmarks: [LandmarkPath]
+    var samplingRegions: [CGRect] = []
 
     var body: some View {
         Canvas { context, size in
+            for region in samplingRegions {
+                let rect = CGRect(x: region.minX * size.width, y: region.minY * size.height,
+                                  width: region.width * size.width, height: region.height * size.height)
+                context.stroke(Path(roundedRect: rect, cornerRadius: 3), with: .color(Color(hex: "EE7189")),
+                               style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+            }
             for layer in layers {
                 let color = Color(hex: layer.colorHex)
                 for points in layer.paths where valid(points) {
@@ -284,6 +295,13 @@ struct OverlayView: View {
                     }.foregroundStyle(RuyuanStyle.ink)
                     Text(layer.note).font(.system(size: 10)).lineSpacing(2).foregroundStyle(RuyuanStyle.muted)
                         .lineLimit(2)
+                    if layer.id == "appearance-under-eye" {
+                        let regions = OverlayPresentationGeometry.eyeSamplingRegions(for: layer, landmarks: report.landmarks,
+                            imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
+                        Text(regions.isEmpty ? "本次未标出稳定的眼下采样范围。" : "细框为眼下采样范围，不是病灶边界。")
+                            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.ink)
+                            .accessibilityIdentifier("eyeSamplingRangeLegend")
+                    }
                     Text("来源：\(report.isSample ? "原创演示" : layer.source)")
                         .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted).lineLimit(1)
                 }.padding(12).frame(maxWidth: .infinity, alignment: .leading)

@@ -302,6 +302,10 @@ struct AnalysisProgressView: View {
     private func scanPhoto(_ report: AnalysisReport, focus: CGRect, elapsed: Double,
                            phases: ScanMotionTimeline.Phases, exit: Double) -> some View {
         let paths = sceneLandmarks(report)
+        let sampling = displayLayers(report).first(where: { $0.id == "appearance-under-eye" }).map {
+            OverlayPresentationGeometry.eyeSamplingRegions(for: $0, landmarks: report.landmarks,
+                imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
+        } ?? []
         return GeometryReader { proxy in
             let transform = ReportPhotoTransform(
                 imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
@@ -312,7 +316,7 @@ struct AnalysisProgressView: View {
                 ZStack(alignment: .topLeading) {
                     ScanGeometryDrawing(layers: displayLayers(report), landmarks: paths, transform: transform,
                                         phases: phases, elapsed: elapsed, reduceMotion: reduceMotion,
-                                        angleProgress: angleProgress(elapsed: elapsed, phases: phases))
+                                        angleProgress: angleProgress(elapsed: elapsed, phases: phases), samplingRegions: sampling)
                     measurementGuides(report, transform: transform, progress: phases.referenceLines,
                                       measurementProgress: phases.measurements)
                     ForEach(measurements(report)) { item in
@@ -325,6 +329,14 @@ struct AnalysisProgressView: View {
                             .opacity(labelOpacity)
                             .offset(y: CGFloat(1 - labelOpacity) * 5)
                             .allowsHitTesting(false)
+                    }
+                    if !sampling.isEmpty {
+                        Text("眼下采样范围").font(.system(size: 11)).foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.black.opacity(0.35), in: Capsule())
+                            .padding(.horizontal, 12).padding(.top, 43).opacity(phases.labels)
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("scanEyeSamplingRangeNotice")
                     }
                 }.opacity(exit)
             }
@@ -514,7 +526,7 @@ struct AnalysisProgressView: View {
 
     private func resultPanel(_ report: AnalysisReport) -> some View {
         let hasManualThirds = report.geometry.contains { $0.id == "calibrated-upper-third" && $0.value != nil }
-        let matchingMetrics = report.geometry.filter { metric in
+        let matchingMetrics = panelMetrics(report).filter { metric in
             guard metric.value != nil else { return false }
             if scene == .thirds { return metric.id.hasPrefix(hasManualThirds ? "calibrated-" : "model-third-") && metric.id.contains("third") }
             return scene.tokens.contains(where: { metric.id.localizedCaseInsensitiveContains($0) })
@@ -531,37 +543,72 @@ struct AnalysisProgressView: View {
             }
             if scene.rawValue <= ScanScene.nose.rawValue {
                 if matchingMetrics.isEmpty {
-                    Text(scene == .thirds ? "缺少稳定可见发肤边界及手动标记，不补三段值；可在报告中标定。" : report.isSample ? "当前点位来自手工构造的示例，不是相机检测。" : "显示本次实际识别的面部轮廓与五官点位。")
-                        .font(.caption2).lineSpacing(3)
+                    Text(scene == .thirds ? "可在报告中补充上界标记" : report.isSample ? "合成点位 · 交互示例" : "已完成本次轮廓定位")
+                        .font(.system(size: 12)).lineSpacing(3)
                 } else {
-                    ForEach(Array(matchingMetrics.prefix(3))) { metric in
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(metric.title).font(.system(size: 12)).lineLimit(1); Spacer()
-                            Text(metric.formattedValue).font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    HStack(alignment: .top, spacing: 16) {
+                        ForEach(Array(matchingMetrics.prefix(scene == .thirds ? 3 : 2))) { metric in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(panelMetricTitle(metric)).font(.system(size: 11)).lineLimit(1)
+                                Text(metric.formattedValue).font(.system(size: 14, weight: .medium)).monospacedDigit()
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
-                if scene == .thirds && !matchingMetrics.isEmpty && !hasManualThirds {
-                    Text("上界是模型可见发肤边界，不等同已确认的解剖发际线。")
-                        .font(.system(size: 9)).foregroundStyle(Color(hex: "C6BFFF"))
-                }
             } else if items.isEmpty {
-                Text("本次没有这一部位的可靠分项，不生成假计数或严重程度。").font(.caption2).lineSpacing(3)
+                Text("这一部位的分项结果待采集").font(.system(size: 12)).lineSpacing(3)
             } else {
-                ForEach(Array(items.prefix(3))) { item in
+                ForEach(Array(items.prefix(2))) { item in
                     HStack(alignment: .firstTextBaseline) {
                         Text(item.title).font(.system(size: 10)); Spacer()
                         Text(item.valueText).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.trailing)
                     }
                 }
             }
-            Text("照片外观参考 · 毫米值仅来自同拍深度或本人标定")
+            Text(report.isSample ? "合成示例 · 非真实测量" : "原图点位 · 照片外观参考")
                 .font(.system(size: 8)).foregroundStyle(.white.opacity(0.60))
-        }.foregroundStyle(.white).padding(.horizontal, 19).padding(.vertical, 18)
+        }.foregroundStyle(.white).padding(.horizontal, 19).padding(.vertical, 13)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.black.opacity(0.72), in: ScanPanelShape())
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("scanMeasurementPanel")
+    }
+
+    private func panelMetrics(_ report: AnalysisReport) -> [GeometryMetric] {
+        let priority: [String]
+        switch scene {
+        case .face: priority = ["v2-jaw-right-angle", "v2-contour-aspect"]
+        case .triangle: priority = ["v2-triangle-mouth-angle", "v2-chin-height-width"]
+        case .brow:
+            let eye = report.landmarks.filter { ["leftEye", "rightEye"].contains($0.id) }
+                .min { ($0.points.map(\.x).min() ?? 1) < ($1.points.map(\.x).min() ?? 1) }?.id
+            let brow = eye == "leftEye" ? "leftEyebrow" : "rightEyebrow"
+            priority = ["v2-\(brow)-arch-angle", "v2-\(eye ?? "leftEye")-inner-angle"]
+        case .eyes: priority = ["v2-five-gap", "v2-five-left-eye"]
+        case .nose: priority = ["nose-mouth", "lip-upper-lower", "v2-nose-height-width", "v2-upper-lower-lip"]
+        default: priority = []
+        }
+        if priority.isEmpty { return report.geometry }
+        let chosen = priority.compactMap { id in report.geometry.first { $0.id == id && $0.value != nil } }
+        return chosen.isEmpty ? report.geometry : chosen
+    }
+
+    private func panelMetricTitle(_ metric: GeometryMetric) -> String {
+        switch metric.id {
+        case "v2-jaw-right-angle": return "二维轮廓夹角"
+        case "v2-contour-aspect": return "轮廓高宽比"
+        case "v2-triangle-mouth-angle": return "唇中心三角顶角"
+        case "v2-chin-height-width": return "颏区高宽比"
+        case "v2-five-gap": return "眼间距 / 平均眼宽"
+        case "v2-five-left-eye": return "左眼宽 / 平均眼宽"
+        default:
+            if metric.id.hasSuffix("arch-angle") { return "眉弓轮廓夹角" }
+            if metric.id.hasSuffix("inner-angle") { return "眼内侧轮廓角" }
+            if metric.id.hasSuffix("upper-third") || metric.id.hasSuffix("third-upper") { return "上段占比" }
+            if metric.id.hasSuffix("middle-third") || metric.id.hasSuffix("third-middle") { return "中段占比" }
+            if metric.id.hasSuffix("lower-third") || metric.id.hasSuffix("third-lower") { return "下段占比" }
+            return metric.title
+        }
     }
 
     private var playback: some View {

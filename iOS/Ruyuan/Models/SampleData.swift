@@ -70,6 +70,10 @@ enum SampleData {
         value.landmarks = paths
         value.geometry += FaceGeometryAnalyzer.metrics(landmarks: points, width: value.imageWidth, height: value.imageHeight)
         value.overlays += FaceGeometryAnalyzer.overlays(landmarks: points, width: value.imageWidth, height: value.imageHeight)
+        value.overlays.append(OverlayLayer(id: "appearance-under-eye", title: "眼下采样范围 · 合成示例", colorHex: "8677B9", kind: .polygons,
+            paths: [[p(0.31,0.47),p(0.42,0.47),p(0.42,0.50),p(0.31,0.50)],
+                    [p(0.58,0.47),p(0.69,0.47),p(0.69,0.50),p(0.58,0.50)]],
+            note: "UI测试手工合成的采样行，不是图像检测或病灶。", source: "sample-manual-ui-fixture"))
         value.summary = "仅用于 UI 自动测试的原创插画和手工合成点位，不是真实照片或检测结果。"
         return value
     }
