@@ -96,7 +96,8 @@ final class AppStore: ObservableObject {
         return UIImage(contentsOfFile: photos.appendingPathComponent(report.imageFileName).path)
     }
 
-    func analyze(image: UIImage, assessment: SkinSelfAssessment? = nil) async {
+    func analyze(image: UIImage, assessment: SkinSelfAssessment? = nil,
+                 depth: DepthSnapshot? = nil, depthNotice: String? = nil) async {
         guard !isAnalyzing, !isDeleting, !isCancelling else { return }
         guard hasConsent else { errorMessage = "请先同意照片处理说明。"; return }
         guard pending == nil else {
@@ -113,6 +114,9 @@ final class AppStore: ObservableObject {
         stage = .preparing
         let filename = UUID().uuidString + ".jpg"
         let destination = photos.appendingPathComponent(filename)
+        // Match the original camera pixels before upright isotropic preprocessing.
+        // Never persist/upload depth; interrupted remote jobs resume as ordinary 2D.
+        let trustedDepth = depth?.matches(image: image) == true ? depth : nil
         analysisTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -129,7 +133,8 @@ final class AppStore: ObservableObject {
                     report = try await self.performRemote(data: prepared.data, run: run)
                 } else {
                     report = try await LocalAnalyzer.analyze(image: prepared.image, reportID: UUID().uuidString,
-                                                           imageFileName: filename) { [weak self] stage in
+                                                           imageFileName: filename, depth: trustedDepth,
+                                                           depthNotice: depthNotice) { [weak self] stage in
                         Task { @MainActor in if self?.runID == run { self?.stage = stage } }
                     }
                 }

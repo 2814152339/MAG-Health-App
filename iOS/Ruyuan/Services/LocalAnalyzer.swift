@@ -9,6 +9,8 @@ struct LocalAnalyzer {
         image: UIImage,
         reportID: String,
         imageFileName: String,
+        depth: DepthSnapshot? = nil,
+        depthNotice: String? = nil,
         progress: @escaping @Sendable (AnalysisStage) -> Void
     ) async throws -> AnalysisReport {
         // UIImage is immutable here; neither the caller nor this worker mutates it.
@@ -16,7 +18,7 @@ struct LocalAnalyzer {
         let worker = Task.detached(priority: .userInitiated) {
             try autoreleasepool {
                 try run(image: input.image, reportID: reportID,
-                        imageFileName: imageFileName, progress: progress)
+                        imageFileName: imageFileName, depth: depth, depthNotice: depthNotice, progress: progress)
             }
         }
         return try await withTaskCancellationHandler {
@@ -33,6 +35,7 @@ struct LocalAnalyzer {
 
     private static func run(
         image: UIImage, reportID: String, imageFileName: String,
+        depth: DepthSnapshot?, depthNotice: String?,
         progress: @escaping @Sendable (AnalysisStage) -> Void
     ) throws -> AnalysisReport {
         progress(.preparing)
@@ -156,6 +159,20 @@ struct LocalAnalyzer {
         let detailed = AppearanceAnalyzer.analyze(raster: raster, landmarks: lookup, faceBox: box, segmentation: segmentation)
         overlays += detailed.overlays
         overlays += FaceGeometryAnalyzer.overlays(landmarks: lookup, width: width, height: height)
+
+        if let depth {
+            let measurements = DepthMeasurementService.metrics(snapshot: depth, landmarks: lookup,
+                                                               imageWidth: width, imageHeight: height)
+            geometry += measurements
+            overlays += DepthMeasurementService.overlays(snapshot: depth, landmarks: lookup,
+                                                         imageWidth: width, imageHeight: height)
+            quality.append(QualityCheck(id: "trueDepth", title: "同次 TrueDepth 表面测距", passed: !measurements.isEmpty,
+                detail: measurements.isEmpty ? "已取得同次深度，当前标定/特征点或深度质量未满足测距条件；未补造毫米值。"
+                    : "已校验同次照片绑定、绝对深度与相机标定，以校正后的相机射线计算表面两点三维直线距离；不是骨性测量。"))
+        } else {
+            quality.append(QualityCheck(id: "trueDepth", title: "本次二维照片分析", passed: true,
+                detail: depthNotice ?? "本次无可用受信 TrueDepth 数据；保留二维比例和角度，不生成默认毫米数。"))
+        }
 
         let classifications = try SkinClassifierService.classify(image: cgImage, faceBox: box)
         progress(.report)

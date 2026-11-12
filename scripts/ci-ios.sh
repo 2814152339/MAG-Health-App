@@ -88,6 +88,11 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit 1
 fi
 run_logged verify-segmentation-model python3 scripts/setup_segmentation_model.py --check
+if [[ -f docs/models/coreml-artifacts.json ]]; then
+  run_logged install-classifier-models python3 scripts/install_coreml_artifacts.py
+  run_logged verify-classifier-models python3 scripts/install_coreml_artifacts.py --check
+fi
+run_logged generate-project python3 scripts/generate_xcode_project.py
 run_logged environment bash -c 'set -e; sw_vers; xcode-select -p; xcodebuild -version; xcrun --sdk iphonesimulator --show-sdk-version'
 SDK_VERSION="$(xcrun --sdk iphonesimulator --show-sdk-version)"
 xcrun simctl list runtimes --json > "$OUT/runtimes.json"

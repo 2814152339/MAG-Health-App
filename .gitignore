@@ -29,3 +29,4 @@ backend/models/*.task
 *.ipa
 *.xcarchive/
 qa/*.png
+iOS/Ruyuan/Resources/CoreML/

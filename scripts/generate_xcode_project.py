@@ -32,6 +32,12 @@ resources = [('Ruyuan/Resources/Assets.xcassets','folder.assetcatalog'),
              ('Ruyuan/Resources/PrivacyInfo.xcprivacy','text.xml'),
              ('Ruyuan/Resources/Models/selfie_multiclass_256x256.tflite','file'),
              ('Ruyuan/Resources/Models/SelfieMulticlass-APACHE-2.0.txt','text')]
+coreml_root = IOS / 'Ruyuan/Resources/CoreML'
+for package in sorted(coreml_root.glob('*.mlpackage')):
+    resources.append((package.relative_to(IOS).as_posix(), 'folder.mlpackage'))
+if (coreml_root/'coreml-model-manifest.json').is_file():
+    resources += [('Ruyuan/Resources/CoreML/coreml-model-manifest.json', 'text.json'),
+                  ('Ruyuan/Resources/CoreML/source-notices', 'folder')]
 
 # Exact official source revision; binary targets include their own SHA-256 pins.
 obj('package:mediapipe', 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/google-ai-edge/mediapipe"; requirement = { kind = revision; revision = "3c49477cd79f753fbe943d814b917e3c8c0bf404"; };')
@@ -86,7 +92,8 @@ for group,name,ptype,product,filetype in target_names:
             settings.update({'GENERATE_INFOPLIST_FILE':'YES'})
             if group=='tests':settings.update({'BUNDLE_LOADER':'$(TEST_HOST)','TEST_HOST':'$(BUILT_PRODUCTS_DIR)/Ruyuan.app/Ruyuan'})
             else:settings['TEST_TARGET_NAME']='Ruyuan'
-        if mode=='Debug':settings.update({'SWIFT_OPTIMIZATION_LEVEL':'-Onone','SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG $(inherited)'})
+        model_flag = ' RUYUAN_COREML_BUNDLED' if len(list(coreml_root.glob('*.mlpackage'))) == 3 else ''
+        if mode=='Debug':settings.update({'SWIFT_OPTIMIZATION_LEVEL':'-Onone','SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG $(inherited)'+model_flag})
         else:settings.update({'SWIFT_OPTIMIZATION_LEVEL':'-O','VALIDATE_PRODUCT':'YES'})
         config('config:'+group+':'+mode,settings)
     obj('configlist:'+group, f'isa = XCConfigurationList; buildConfigurations = {ids(["config:"+group+":Debug","config:"+group+":Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')

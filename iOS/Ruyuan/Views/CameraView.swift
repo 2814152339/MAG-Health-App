@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 struct CameraView: View {
-    let onCapture: (UIImage) -> Void
+    let onDepthCapture: (CameraCapture) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = CameraService()
@@ -11,7 +11,8 @@ struct CameraView: View {
     private let accent = Color(hex: "7775FF")
     private let paper = Color(hex: "F5F3FC")
 
-    init(onCapture: @escaping (UIImage) -> Void) { self.onCapture = onCapture }
+    init(onCapture: @escaping (UIImage) -> Void) { self.onDepthCapture = { onCapture($0.image) } }
+    init(onDepthCapture: @escaping (CameraCapture) -> Void) { self.onDepthCapture = onDepthCapture }
 
     var body: some View {
         ZStack {
@@ -67,7 +68,7 @@ struct CameraView: View {
                     .background(Color.black)
                 if camera.authorizationStatus == .authorized && camera.isRunning {
                     GeometryReader { proxy in
-                        let width = min(proxy.size.width * 0.72, 270)
+                        let width = min(proxy.size.width * 0.72, min(270, max(60, (proxy.size.height - 70) / 1.32)))
                         VStack {
                             Spacer()
                             Ellipse()
@@ -103,6 +104,9 @@ struct CameraView: View {
                     .foregroundStyle(ink.opacity(0.58))
                 Text("实时定位仅作拍摄参考，不录制视频，也不限制手动拍摄")
                     .font(.system(size: 10)).foregroundStyle(accent)
+                    .multilineTextAlignment(.center)
+                Text(camera.depthAvailable ? "TrueDepth同拍深度已启用 · 不支持时自动保留二维分析" : "当前摄像头为二维照片分析 · 不生成无依据的毫米")
+                    .font(.system(size: 10)).foregroundStyle(ink.opacity(0.58))
                     .multilineTextAlignment(.center)
             }
             .foregroundStyle(ink)
@@ -194,6 +198,9 @@ struct CameraView: View {
             Text("确认画面清晰、五官无遮挡，再继续检测。")
                 .font(.system(size: 12))
                 .foregroundStyle(ink.opacity(0.65))
+            Text(camera.depthNotice)
+                .font(.system(size: 10)).foregroundStyle(ink.opacity(0.58))
+                .multilineTextAlignment(.center).padding(.horizontal, 25)
             HStack(spacing: 14) {
                 Button("重拍") { camera.retake() }
                     .frame(maxWidth: .infinity).frame(height: 52)
@@ -201,7 +208,7 @@ struct CameraView: View {
                     .background(.white, in: Capsule())
                 Button("使用这张") {
                     camera.stop()
-                    onCapture(image)
+                    onDepthCapture(CameraCapture(image: image, depth: camera.capturedDepth, depthNotice: camera.depthNotice))
                     dismiss()
                 }
                 .frame(maxWidth: .infinity).frame(height: 52)

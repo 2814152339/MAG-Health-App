@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +33,7 @@ jobs:
         shell: bash
         env:
           CI_ARTIFACTS_DIR: ${{ runner.temp }}/ruyuan-iphone-ci
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash scripts/ci-ios-device.sh
 
       - name: Upload unsigned IPA and build evidence even on failure

@@ -19,6 +19,8 @@ struct RootView: View {
     @State private var showPicker = false
     @State private var consentAction: Int?
     @State private var pendingInput: UIImage?
+    @State private var pendingDepth: DepthSnapshot?
+    @State private var pendingDepthNotice: String?
     @State private var approvedCaptureAction: Int?
     @State private var showAssessment = false
     @State private var selectedAssessment: SkinSelfAssessment?
@@ -38,15 +40,20 @@ struct RootView: View {
         }
         .tint(RuyuanStyle.purple)
         .fullScreenCover(isPresented: $showCamera, onDismiss: consumeInputIfReady) {
-            CameraView { image in
-                pendingInput = image
+            CameraView(onDepthCapture: { capture in
+                pendingInput = capture.image
+                pendingDepth = capture.validatedDepth()
+                pendingDepthNotice = capture.depthNotice
                 showCamera = false
-            }
+            })
         }
         .sheet(isPresented: $showPicker, onDismiss: consumeInputIfReady) {
             PhotoLibraryPicker { result in
                 switch result {
-                case .success(let image): pendingInput = image
+                case .success(let image):
+                    pendingInput = image
+                    pendingDepth = nil
+                    pendingDepthNotice = "本次为相册照片，未携带受信同次 TrueDepth 深度；按二维照片分析。"
                 case .failure(let error): store.errorMessage = error.localizedDescription
                 }
                 showPicker = false
@@ -58,9 +65,13 @@ struct RootView: View {
         }
         .sheet(isPresented: $showAssessment, onDismiss: {
             guard assessmentReady, let image = pendingInput else { return }
+            let depth = pendingDepth
+            let depthNotice = pendingDepthNotice
             pendingInput = nil
+            pendingDepth = nil
+            pendingDepthNotice = nil
             assessmentReady = false
-            Task { await store.analyze(image: image, assessment: selectedAssessment) }
+            Task { await store.analyze(image: image, assessment: selectedAssessment, depth: depth, depthNotice: depthNotice) }
         }) {
             SkinAssessmentView(onContinue: { assessment in
                 selectedAssessment = assessment
@@ -68,6 +79,8 @@ struct RootView: View {
                 showAssessment = false
             }, onCancel: {
                 pendingInput = nil
+                pendingDepth = nil
+                pendingDepthNotice = nil
                 assessmentReady = false
                 selectedAssessment = nil
                 showAssessment = false

@@ -65,7 +65,17 @@ if [[ "$(uname -s)" != Darwin ]]; then
   exit 1
 fi
 run_logged verify-segmentation-model python3 scripts/setup_segmentation_model.py --check
+if [[ -f docs/models/coreml-artifacts.json ]]; then
+  run_logged install-classifier-models python3 scripts/install_coreml_artifacts.py
+  run_logged verify-classifier-models python3 scripts/install_coreml_artifacts.py --check
+fi
+run_logged generate-project python3 scripts/generate_xcode_project.py
 run_logged environment bash -c 'set -e; sw_vers; xcode-select -p; xcodebuild -version; xcrun --sdk iphoneos --show-sdk-version'
+SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+for header in AVCameraCalibrationData AVDepthData; do
+  HEADER_PATH="$SDK_PATH/System/Library/Frameworks/AVFoundation.framework/Headers/$header.h"
+  if [[ -f "$HEADER_PATH" ]]; then cp "$HEADER_PATH" "$OUT/$header-header.txt"; fi
+done
 
 BUILD_STATUS=failed
 run_logged build xcodebuild -project "$ROOT/iOS/Ruyuan.xcodeproj" -scheme Ruyuan \

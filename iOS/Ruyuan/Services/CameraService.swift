@@ -15,6 +15,9 @@ final class CameraService: NSObject, ObservableObject {
     @Published private(set) var isSwitching = false
     @Published private(set) var position: AVCaptureDevice.Position = .front
     @Published private(set) var capturedImage: UIImage?
+    @Published private(set) var capturedDepth: DepthSnapshot?
+    @Published private(set) var depthAvailable = false
+    @Published private(set) var depthNotice = "本机未提供同拍绝对深度，使用二维照片分析"
     @Published private(set) var errorMessage: String?
     @Published private(set) var guidanceMessage = "将面部放在画面中央，正对镜头"
     @Published private(set) var isWellPositioned = false
@@ -142,6 +145,7 @@ final class CameraService: NSObject, ObservableObject {
     func retake() {
         publish { camera in
             camera.capturedImage = nil
+            camera.capturedDepth = nil
             camera.errorMessage = nil
             camera.isWellPositioned = false
         }
@@ -158,7 +162,7 @@ final class CameraService: NSObject, ObservableObject {
             guard let self, self.configured, !self.captureInFlight, !self.reviewingPhoto,
                   let oldInput = self.input else { return }
             let nextPosition: AVCaptureDevice.Position = oldInput.device.position == .front ? .back : .front
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
+            guard let device = Self.captureDevice(position: nextPosition) else {
                 self.publish { $0.errorMessage = "这台设备没有可用的另一侧摄像头。" }
                 return
             }
@@ -178,6 +182,7 @@ final class CameraService: NSObject, ObservableObject {
                     self.session.addInput(oldInput)
                 }
                 self.configureGuidanceConnection()
+                self.configureDepthDelivery()
                 self.session.commitConfiguration()
                 self.startLiveGuidance()
                 self.publish { camera in
@@ -215,18 +220,28 @@ final class CameraService: NSObject, ObservableObject {
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             settings.flashMode = .off
             settings.photoQualityPrioritization = .quality
-            let processor = PhotoProcessor { [weak self] result in
+            let trueDepth = self.input?.device.deviceType == .builtInTrueDepthCamera
+            let requestDepth = trueDepth && self.photoOutput.isDepthDataDeliveryEnabled && self.photoOutput.isDepthDataDeliverySupported
+            if requestDepth {
+                settings.isDepthDataDeliveryEnabled = true
+                settings.isDepthDataFiltered = false
+                // Depth remains a transient, explicitly paired payload, not hidden photo metadata.
+                settings.embedsDepthDataInPhoto = false
+            }
+            let processor = PhotoProcessor(isTrueDepth: requestDepth) { [weak self] result in
                 guard let self else { return }
                 self.sessionQueue.async { [weak self] in
                     guard let self else { return }
                     self.captureInFlight = false
                     self.processor = nil
                     switch result {
-                    case .success(let image):
+                    case .success(let capture):
                         self.reviewingPhoto = true
                         if self.session.isRunning { self.session.stopRunning() }
                         self.publish { camera in
-                            camera.capturedImage = image
+                            camera.capturedImage = capture.image
+                            camera.capturedDepth = capture.depth
+                            camera.depthNotice = capture.depthNotice
                             camera.isCapturing = false
                             camera.isRunning = false
                         }
@@ -258,8 +273,7 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     private func configure() throws {
-        let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
-            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        let device = Self.captureDevice(position: .front) ?? Self.captureDevice(position: .back)
         guard let device else { throw CameraFailure.noDevice }
         let newInput = try AVCaptureDeviceInput(device: device)
         session.beginConfiguration()
@@ -284,6 +298,7 @@ final class CameraService: NSObject, ObservableObject {
         configureDevice(device)
         configurePhotoConnection()
         configureGuidanceConnection()
+        configureDepthDelivery()
         configured = true
         publish { $0.position = device.position }
     }
@@ -355,8 +370,32 @@ final class CameraService: NSObject, ObservableObject {
             if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
             if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
             if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) { device.whiteBalanceMode = .continuousAutoWhiteBalance }
+            if device.deviceType == .builtInTrueDepthCamera {
+                let formats = device.activeFormat.supportedDepthDataFormats.filter {
+                    let subtype = CMFormatDescriptionGetMediaSubType($0.formatDescription)
+                    return subtype == kCVPixelFormatType_DepthFloat16 || subtype == kCVPixelFormatType_DepthFloat32
+                }
+                if let best = formats.max(by: {
+                    CMVideoFormatDescriptionGetDimensions($0.formatDescription).width < CMVideoFormatDescriptionGetDimensions($1.formatDescription).width
+                }) { device.activeDepthDataFormat = best }
+            }
         } catch {
             // The camera's automatic defaults remain usable if this optional configuration fails.
+        }
+    }
+
+    private static func captureDevice(position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .front, let trueDepth = AVCaptureDevice.default(.builtInTrueDepthCamera, for: .video, position: .front) { return trueDepth }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    /// Invoked only inside sessionQueue configuration transactions, never on a frame callback.
+    private func configureDepthDelivery() {
+        let enabled = input?.device.deviceType == .builtInTrueDepthCamera && photoOutput.isDepthDataDeliverySupported
+        photoOutput.isDepthDataDeliveryEnabled = enabled
+        publish { camera in
+            camera.depthAvailable = enabled
+            camera.depthNotice = enabled ? "已启用同拍TrueDepth；仅有效绝对深度与标定齐全时提供表面毫米参考" : "此摄像头无可用同拍绝对深度，继续二维照片分析"
         }
     }
 
@@ -472,9 +511,12 @@ final class CameraService: NSObject, ObservableObject {
     }
 
     private final class PhotoProcessor: NSObject, AVCapturePhotoCaptureDelegate {
-        private let completion: (Result<UIImage, Error>) -> Void
-        private var processed: Result<UIImage, Error>?
-        init(completion: @escaping (Result<UIImage, Error>) -> Void) { self.completion = completion }
+        private let completion: (Result<CameraCapture, Error>) -> Void
+        private let isTrueDepth: Bool
+        private var processed: Result<CameraCapture, Error>?
+        init(isTrueDepth: Bool, completion: @escaping (Result<CameraCapture, Error>) -> Void) {
+            self.isTrueDepth = isTrueDepth; self.completion = completion
+        }
 
         func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
             if let error { processed = .failure(error); return }
@@ -484,7 +526,16 @@ final class CameraService: NSObject, ObservableObject {
             }
             // Preserve the capture's EXIF rotation until the caller canonicalizes pixels.
             // The capture connection explicitly disabled horizontal mirroring.
-            processed = .success(image)
+            let depth: DepthSnapshot?
+            let notice: String
+            do {
+                depth = try DepthSnapshot.capture(photo: photo, image: image, jpeg: data, isTrueDepth: isTrueDepth)
+                notice = "已取得同拍绝对深度与标定；仅稳定的可见表面端点提供毫米参考，不是骨性或临床测量。"
+            } catch {
+                depth = nil
+                notice = (error as? DepthSnapshot.CaptureFailure)?.localizedDescription ?? "本次深度处理未完成，照片仍可用于二维分析。"
+            }
+            processed = .success(CameraCapture(image: image, depth: depth, depthNotice: notice))
         }
 
         func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
