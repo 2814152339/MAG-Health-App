@@ -60,6 +60,9 @@ final class RuyuanUITests: XCTestCase {
         detailsButton.tap()
         let detail = identified("reportDetailSheet", in: app)
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let radar = identified("reportRadarChart", in: app)
+        XCTAssertTrue(revealFully(radar, in: app), "The initial report overview must retain its actual five-dimension radar.")
+        capture("detail-overview", app: app)
 
         for dimension in ["waterOil", "tone", "sensitivity", "smoothness", "aging"] {
             tapDetailTab(dimension, app: app)
@@ -151,6 +154,8 @@ final class RuyuanUITests: XCTestCase {
         let geometry = identified("reportGeometryTools", in: app)
         XCTAssertTrue(reveal(geometry, in: app)); geometry.tap()
         let calibration = identified("openCalibrationTools", in: app)
+        capture("geometry-tools-expanded", app: app)
+        XCTAssertTrue(calibration.waitForExistence(timeout: 5), "Expanding the real geometry section must expose its calibration link without replacing its identifier.")
         XCTAssertTrue(reveal(calibration, in: app)); calibration.tap()
         let calibrationBar = app.navigationBars["手动标定"]
         XCTAssertTrue(calibrationBar.waitForExistence(timeout: 5))

@@ -1,0 +1,310 @@
+{
+  "schema": 1,
+  "id": "pore_net",
+  "state": "converted_and_coreml_cpu_verified",
+  "source": {
+    "repository": "ZombaSY/Pore-Net-release",
+    "revision": "6f851e0d911bd73f41dd905c685129b13d52e1bc",
+    "files": [
+      {
+        "path": "LICENSE",
+        "bytes": 11356,
+        "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/LICENSE"
+      },
+      {
+        "path": "README.md",
+        "bytes": 505,
+        "sha256": "425b40c3679f9c6f6426c3c04bf5edb714d8bdf9dc1a4c35b1d92423e5e91238",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/README.md"
+      },
+      {
+        "path": "model_checkpoints/PoreNet.pt",
+        "bytes": 27390,
+        "sha256": "a2d0f5f20eee45197612d55d2404ef988832dbcd50dc949bfcd16f5978711da7",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/model_checkpoints/PoreNet.pt"
+      },
+      {
+        "path": "models/model.py",
+        "bytes": 3874,
+        "sha256": "486afb01a9c9b9c33b98c08dcc391dc710ddba8a1b9ecfc33d99f88608a51607",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/models/model.py"
+      },
+      {
+        "path": "models/dataloader.py",
+        "bytes": 10443,
+        "sha256": "0672741951bc66b340fba923bc65d727b3ceefb3b33e959bdb91a3ac5909d45e",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/models/dataloader.py"
+      },
+      {
+        "path": "hyper_parameters/inference.yml",
+        "bytes": 470,
+        "sha256": "4cd498d498a6c1d43b384f717c2bab9167dc92a1d8d27d790ca6cf371675651e",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/hyper_parameters/inference.yml"
+      },
+      {
+        "path": "data_examples/input_cropped/20190315_144533_white.png",
+        "bytes": 3136208,
+        "sha256": "2d050468ccfc712352ac34709142f79bc67084e039120d3ba2c7d0f226c14f5f",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/input_cropped/20190315_144533_white.png"
+      },
+      {
+        "path": "data_examples/label_cropped/20190315_144533_white.png",
+        "bytes": 188918,
+        "sha256": "8e2329833477be157f17ff32d211562fe9d59b02e0c4db6f8d0063acaef3c43f",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/label_cropped/20190315_144533_white.png"
+      },
+      {
+        "path": "data_examples/mask_cropped/20190315_144533_white.png",
+        "bytes": 15272,
+        "sha256": "5aeee1b554907007962839c5b9f99ce41228ffcbdce0fc79c971c617bb6a43ad",
+        "source": "https://raw.githubusercontent.com/ZombaSY/Pore-Net-release/6f851e0d911bd73f41dd905c685129b13d52e1bc/data_examples/mask_cropped/20190315_144533_white.png"
+      }
+    ],
+    "schema": 1,
+    "license": "Apache-2.0",
+    "paper": "https://doi.org/10.1109/CBMS55023.2022.00062",
+    "source": "https://github.com/ZombaSY/Pore-Net-release",
+    "input": {
+      "name": "image",
+      "width": 1024,
+      "height": 1280,
+      "color": "RGB",
+      "imageScale": 0.00392156862745098,
+      "mean": [
+        0.512,
+        0.459,
+        0.353
+      ],
+      "std": [
+        0.254,
+        0.226,
+        0.219
+      ]
+    },
+    "threshold": 0.25,
+    "weightLicenseEvidence": "Repository Apache-2.0 LICENSE; checkpoint is versioned in the same repository; no separate weight restriction found",
+    "trainingDataStatus": "Repository does not disclose full training data sources, subject consent or held-out split; do not label as independently commercially validated.",
+    "authorPaperPage": "https://www.lulu-lab.com/bbs/board.php?bo_table=library&wr_id=3",
+    "publisherPaperPage": "https://ieeexplore.ieee.org/abstract/document/9867133"
+  },
+  "computePrecision": "float32",
+  "modelType": "neuralNetwork",
+  "input": {
+    "name": "image",
+    "kind": "ImageType",
+    "width": 1024,
+    "height": 1280,
+    "colorLayout": "RGB",
+    "scale": 0.00392156862745098,
+    "bias": [
+      0,
+      0,
+      0
+    ],
+    "embeddedNormalization": {
+      "mean": [
+        0.512,
+        0.459,
+        0.353
+      ],
+      "std": [
+        0.254,
+        0.226,
+        0.219
+      ]
+    }
+  },
+  "output": {
+    "name": "poreProbability",
+    "kind": "MultiArray",
+    "dtype": "float32",
+    "shape": [
+      1,
+      1,
+      1280,
+      1024
+    ]
+  },
+  "threshold": 0.25,
+  "parameterCount": 4793,
+  "validation": {
+    "data": "author public example plus two deterministic synthetic images; no private photographs",
+    "traceMaxAbsoluteProbabilityError": 0.0,
+    "samples": [
+      {
+        "name": "author_public_example",
+        "shape": [
+          1,
+          1,
+          1280,
+          1024
+        ],
+        "maxAbsoluteProbabilityError": 3.7550926208496094e-06,
+        "meanAbsoluteProbabilityError": 1.269667819769893e-07,
+        "thresholds": [
+          {
+            "threshold": 0.25,
+            "maskDisagreementFraction": 0.0,
+            "torchMetrics": {
+              "threshold": 0.25,
+              "truePositivePixels": 39382,
+              "falsePositivePixels": 32828,
+              "falseNegativePixels": 19398,
+              "foregroundIoU": 0.4298969522312462,
+              "foregroundDice": 0.6012978089930529,
+              "predictedPixels": 72210,
+              "targetPixels": 58780
+            },
+            "coremlMetrics": {
+              "threshold": 0.25,
+              "truePositivePixels": 39382,
+              "falsePositivePixels": 32828,
+              "falseNegativePixels": 19398,
+              "foregroundIoU": 0.4298969522312462,
+              "foregroundDice": 0.6012978089930529,
+              "predictedPixels": 72210,
+              "targetPixels": 58780
+            },
+            "maxForegroundMetricDifference": 0.0
+          },
+          {
+            "threshold": 0.4,
+            "maskDisagreementFraction": 0.0,
+            "torchMetrics": {
+              "threshold": 0.4,
+              "truePositivePixels": 29778,
+              "falsePositivePixels": 13517,
+              "falseNegativePixels": 29002,
+              "foregroundIoU": 0.41188431055230507,
+              "foregroundDice": 0.5834533431300515,
+              "predictedPixels": 43295,
+              "targetPixels": 58780
+            },
+            "coremlMetrics": {
+              "threshold": 0.4,
+              "truePositivePixels": 29778,
+              "falsePositivePixels": 13517,
+              "falseNegativePixels": 29002,
+              "foregroundIoU": 0.41188431055230507,
+              "foregroundDice": 0.5834533431300515,
+              "predictedPixels": 43295,
+              "targetPixels": 58780
+            },
+            "maxForegroundMetricDifference": 0.0
+          }
+        ]
+      },
+      {
+        "name": "uniform_rgb",
+        "shape": [
+          1,
+          1,
+          1280,
+          1024
+        ],
+        "maxAbsoluteProbabilityError": 4.1350722312927246e-07,
+        "meanAbsoluteProbabilityError": 2.1354159684960905e-07,
+        "thresholds": [
+          {
+            "threshold": 0.25,
+            "maskDisagreementFraction": 0.0
+          },
+          {
+            "threshold": 0.4,
+            "maskDisagreementFraction": 0.0
+          }
+        ]
+      },
+      {
+        "name": "seeded_rgb_noise",
+        "shape": [
+          1,
+          1,
+          1280,
+          1024
+        ],
+        "maxAbsoluteProbabilityError": 1.1622905731201172e-06,
+        "meanAbsoluteProbabilityError": 1.4199588171948108e-09,
+        "thresholds": [
+          {
+            "threshold": 0.25,
+            "maskDisagreementFraction": 0.0
+          },
+          {
+            "threshold": 0.4,
+            "maskDisagreementFraction": 0.0
+          }
+        ]
+      }
+    ],
+    "publicExampleTorchMetrics": [
+      {
+        "threshold": 0.25,
+        "truePositivePixels": 39382,
+        "falsePositivePixels": 32828,
+        "falseNegativePixels": 19398,
+        "foregroundIoU": 0.4298969522312462,
+        "foregroundDice": 0.6012978089930529,
+        "predictedPixels": 72210,
+        "targetPixels": 58780
+      },
+      {
+        "threshold": 0.4,
+        "truePositivePixels": 29778,
+        "falsePositivePixels": 13517,
+        "falseNegativePixels": 29002,
+        "foregroundIoU": 0.41188431055230507,
+        "foregroundDice": 0.5834533431300515,
+        "predictedPixels": 43295,
+        "targetPixels": 58780
+      }
+    ],
+    "gates": {
+      "maxAbsoluteProbabilityError": 0.0001,
+      "maxMaskDisagreementFraction": 0.0001,
+      "maxForegroundIoUOrDiceDifference": 0.001,
+      "exactOutputShape": [
+        1,
+        1,
+        1280,
+        1024
+      ]
+    },
+    "meaning": "format conversion parity on one author example; not independent selfie accuracy validation"
+  },
+  "environment": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "macOS": "15.8.2",
+    "python": "3.11.9",
+    "packages": {
+      "torch": "2.7.0",
+      "numpy": "1.26.4",
+      "Pillow": "11.3.0",
+      "coremltools": "9.0"
+    }
+  },
+  "conversionAndVerificationSeconds": 0.5,
+  "resource": {
+    "fileName": "PoreNet.mlmodel",
+    "bytes": 20579,
+    "sha256": "30a8f1e7dc88ae540769c90d9527c3bd93b13f149b748652d0ff14ab390a129c",
+    "inputName": "image",
+    "outputName": "poreProbability",
+    "outputShape": [
+      1,
+      1,
+      1280,
+      1024
+    ],
+    "revision": "6f851e0d911bd73f41dd905c685129b13d52e1bc",
+    "computePrecision": "float32",
+    "threshold": 0.25
+  },
+  "archive": {
+    "fileName": "Ruyuan-PoreNet.zip",
+    "bytes": 46187,
+    "sha256": "adb8601d0731e23dde931689dd726cc266d1c96a9a908e3311e1d2ac7b8b12bc"
+  }
+}

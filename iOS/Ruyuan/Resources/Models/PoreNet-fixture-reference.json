@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "id": "pore_net_uniform_rgb_reference",
+  "state": "local_pytorch_reference_only",
+  "provenance": "Computed on this Windows host with pinned author tensor weights; NOT an additional Core ML run. Core ML parity evidence remains in the unmodified resource manifest from run43135425372.",
+  "sourceRevision": "6f851e0d911bd73f41dd905c685129b13d52e1bc",
+  "sourceWeightSHA256": "a2d0f5f20eee45197612d55d2404ef988832dbcd50dc949bfcd16f5978711da7",
+  "runtime": {
+    "torch": "2.9.1+cpu",
+    "numpy": "1.26.4",
+    "device": "cpu",
+    "threads": 3
+  },
+  "fixture": {
+    "kind": "exact_uniform_uint8_RGB",
+    "rgb": [
+      182,
+      137,
+      111
+    ],
+    "width": 1024,
+    "height": 1280,
+    "coordinateOrigin": "top-left",
+    "pixelFormat": "RGB byte values, no white-balance/color adjustment; normalize once inside Core ML model",
+    "mean": [
+      0.512,
+      0.459,
+      0.353
+    ],
+    "std": [
+      0.254,
+      0.226,
+      0.219
+    ]
+  },
+  "outputShape": [
+    1,
+    1,
+    1280,
+    1024
+  ],
+  "probes": [
+    {
+      "x": 0,
+      "y": 0,
+      "probability": 0.06446873396635056
+    },
+    {
+      "x": 512,
+      "y": 0,
+      "probability": 0.02422015555202961
+    },
+    {
+      "x": 1023,
+      "y": 0,
+      "probability": 0.007064771372824907
+    },
+    {
+      "x": 0,
+      "y": 640,
+      "probability": 0.05227821692824364
+    },
+    {
+      "x": 512,
+      "y": 640,
+      "probability": 0.04560808464884758
+    },
+    {
+      "x": 1023,
+      "y": 640,
+      "probability": 0.052618443965911865
+    },
+    {
+      "x": 0,
+      "y": 1279,
+      "probability": 0.025867082178592682
+    },
+    {
+      "x": 512,
+      "y": 1279,
+      "probability": 0.06113047152757645
+    },
+    {
+      "x": 1023,
+      "y": 1279,
+      "probability": 0.05731051042675972
+    }
+  ],
+  "sumProbabilitiesFloat64": 59675.0536344531,
+  "minProbability": 0.007064771372824907,
+  "maxProbability": 0.07155470550060272,
+  "threshold": 0.25,
+  "candidatePixelCount": 0,
+  "recommendedProbeMaxAbsoluteError": 0.0001,
+  "revision": "6f851e0d911bd73f41dd905c685129b13d52e1bc",
+  "sourceSHA256": "a2d0f5f20eee45197612d55d2404ef988832dbcd50dc949bfcd16f5978711da7",
+  "input": {
+    "width": 1024,
+    "height": 1280,
+    "colorRGB": [
+      182,
+      137,
+      111
+    ]
+  },
+  "thresholdCounts": [
+    {
+      "threshold": 0.25,
+      "candidatePixels": 0
+    },
+    {
+      "threshold": 0.4,
+      "candidatePixels": 0
+    }
+  ]
+}

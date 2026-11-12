@@ -98,6 +98,15 @@ struct LocalAnalyzer {
             throw AnalysisError.poorQuality("关键五官未完整定位，请移开遮挡、关闭美颜后重拍。")
         }
         var geometry = geometryMetrics(lookup, width: width, height: height) + FaceGeometryAnalyzer.metrics(landmarks: lookup, width: width, height: height)
+        var denseLandmarks: FaceLandmarkService.Result?
+        var denseNotice = ""
+        do {
+            denseLandmarks = try FaceLandmarkService.detect(image: cgImage)
+        } catch {
+            try Task.checkCancellation()
+            denseNotice = (error as? FaceLandmarkService.Failure)?.localizedDescription
+                ?? "本机478点模型本次未完成；保留独立的Vision五官结果，不补造密集点。"
+        }
         try Task.checkCancellation()
 
         progress(.skin)
@@ -135,12 +144,20 @@ struct LocalAnalyzer {
             },
             note: "由真实二维特征点形成；轮廓不包含发际线。坐标为原图左上角归一化坐标。", source: featureSource
         )]
+        if let denseLandmarks {
+            landmarkPaths += denseLandmarks.landmarks
+            overlays += denseLandmarks.overlays
+            quality.append(QualityCheck(id: "denseLandmarks", title: "本机478点模型", passed: true,
+                detail: "真实推理得到478个归一化表面点；几何公式仍采用独立Vision定义，不混淆两套轮廓。" + denseLandmarks.source))
+        } else {
+            quality.append(QualityCheck(id: "denseLandmarks", title: "本次密集点未完成", passed: false, detail: denseNotice))
+        }
         var segmentation: FaceSegmentationService.Mask?
         var segmentationNote = ""
         do {
             segmentation = try FaceSegmentationService.segment(raster: raster)
             quality.append(QualityCheck(id: "semanticSegmentation", title: "本机语义分割", passed: true,
-                detail: FaceSegmentationService.source + "；真实输出背景/毛发/身体皮肤/面部皮肤/衣物/配饰六类。皮肤病变检测仍为照片外观公式，不冒充专项模型。"))
+                detail: FaceSegmentationService.source + "；真实输出背景/毛发/身体皮肤/面部皮肤/衣物/配饰六类；专项分类与毛孔模型独立列明来源和运行状态。"))
         } catch {
             try Task.checkCancellation()
             segmentationNote = (error as? FaceSegmentationService.Failure)?.localizedDescription ?? "本机语义分割运行失败；本次使用明确标注的几何ROI降级分析，未生成模型皮肤或毛发掩膜。"
@@ -174,6 +191,7 @@ struct LocalAnalyzer {
                 detail: depthNotice ?? "本次无可用受信 TrueDepth 数据；保留二维比例和角度，不生成默认毫米数。"))
         }
 
+        let pores = try PoreNetService.analyze(image: cgImage, faceBox: box, landmarks: lookup, segmentation: segmentation)
         let classifications = try SkinClassifierService.classify(image: cgImage, faceBox: box)
         progress(.report)
         try Task.checkCancellation()
@@ -184,10 +202,13 @@ struct LocalAnalyzer {
             imageFileName: imageFileName, imageWidth: width, imageHeight: height,
             geometry: geometry, skin: detailed.metrics, landmarks: landmarkPaths,
             overlays: overlays, quality: quality,
-            modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2; " + (segmentation != nil ? FaceSegmentationService.source : "semantic segmentation unavailable; geometric ROI fallback"),
+            modelVersion: featureSource + "; " + AppearanceAnalyzer.version + "; FaceGeometry-v2; " + (segmentation != nil ? FaceSegmentationService.source : "semantic segmentation unavailable; geometric ROI fallback")
+                + (denseLandmarks != nil ? "; " + FaceLandmarkService.source : "; dense model unavailable"),
             summary: segmentationNote + detailed.summary + (caution ? "本次有拍摄质量提示，建议在相同均匀光线下复拍比较。" : "")
         )
-        return SkinClassifierService.applying(classifications, to: report)
+        var combined = PoreNetService.applying(pores, to: SkinClassifierService.applying(classifications, to: report))
+        if combined.quality.contains(where: { !$0.passed }) { combined.status = "已完成 · 有质量或模型提示" }
+        return combined
     }
 
     static func uprightCGImage(_ image: UIImage) -> CGImage? {

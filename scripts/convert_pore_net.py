@@ -105,6 +105,10 @@ def run(folder: Path, output: Path, *, download: bool, preflight: bool) -> dict:
     if path.exists(): raise ValueError('output_model_already_exists')
     converted.save(str(path))
     delivered = ct.models.MLModel(str(path), compute_units=ct.ComputeUnit.CPU_ONLY)
+    def parity_failure(message):
+        receipt['state'] = 'parity_failed'
+        (output/'PoreNet-resource-manifest.json').write_text(json.dumps(receipt, indent=2)+'\n', encoding='utf-8')
+        raise ValueError(message)
     for name, frame, _, original in expected:
         actual = np.asarray(delivered.predict({'image':frame})['poreProbability'], dtype=np.float32)
         if actual.shape != (1, 1, 1280, 1024):
@@ -114,19 +118,19 @@ def run(folder: Path, output: Path, *, download: bool, preflight: bool) -> dict:
         error = np.abs(actual-original)
         sample = {'name':name, 'shape':list(actual.shape), 'maxAbsoluteProbabilityError':float(error.max()),
                   'meanAbsoluteProbabilityError':float(error.mean()), 'thresholds':[]}
+        receipt['validation']['samples'].append(sample)
         for threshold in (.25, .4):
             disagreement = float(np.mean((actual > threshold) != (original > threshold)))
             row = {'threshold':threshold, 'maskDisagreementFraction':disagreement}
+            sample['thresholds'].append(row)
             if name == 'author_public_example':
                 row['torchMetrics'] = mask_metrics(original[0, 0], target, roi, threshold)
                 row['coremlMetrics'] = mask_metrics(actual[0, 0], target, roi, threshold)
                 delta = max(abs(row['torchMetrics'][k]-row['coremlMetrics'][k]) for k in ('foregroundIoU','foregroundDice'))
                 row['maxForegroundMetricDifference'] = delta
-                if delta > .001: raise ValueError('pore_net_coreml_foreground_metric_parity_failed')
-            sample['thresholds'].append(row)
-            if disagreement > .0001: raise ValueError('pore_net_coreml_threshold_mask_parity_failed')
-        receipt['validation']['samples'].append(sample)
-        if float(error.max()) > .0001: raise ValueError('pore_net_coreml_probability_parity_failed')
+                if delta > .001: parity_failure('pore_net_coreml_foreground_metric_parity_failed')
+            if disagreement > .0001: parity_failure('pore_net_coreml_threshold_mask_parity_failed')
+        if float(error.max()) > .0001: parity_failure('pore_net_coreml_probability_parity_failed')
     receipt['state'] = 'converted_and_coreml_cpu_verified'
     receipt['validation']['gates'] = {'maxAbsoluteProbabilityError':.0001, 'maxMaskDisagreementFraction':.0001,
                                      'maxForegroundIoUOrDiceDifference':.001, 'exactOutputShape':[1, 1, 1280, 1024]}

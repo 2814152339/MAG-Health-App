@@ -9,13 +9,13 @@ private enum ScanScene: Int, CaseIterable {
     var duration: Double { [3, 7, 6, 6, 6, 8, 6, 9, 7, 8][rawValue] }
     var tokens: [String] {
         switch self {
-        case .outline: return ["face-landmarks"]
-        case .face: return ["jaw", "contour", "face-shape", "chin"]
+        case .outline: return ["face-landmarks", "geometry-mp-"]
+        case .face: return ["jaw", "contour", "face-shape", "chin", "depth-surface"]
         case .thirds: return ["third", "vertical", "user-calibration", "model-hairline"]
         case .eyes: return ["five", "eye-inner", "left-eye-width", "right-eye-width", "eye-gap"]
         case .triangle: return ["triangle", "chin"]
         case .brow: return ["brow", "eye-aspect", "canthus", "inner-angle", "geometry-eye"]
-        case .nose: return ["nose", "lip", "mouth"]
+        case .nose: return ["nose", "lip", "mouth", "depth-surface"]
         case .texture: return ["wrinkle", "texture", "line-", "forehead", "nasolabial"]
         case .spots: return ["spot", "pore", "dark", "redness", "highlight", "blackhead", "acne"]
         case .eyeArea: return ["under-eye", "eye-area", "dark-circle", "lines-eye", "crow"]
@@ -56,10 +56,19 @@ struct AnalysisProgressView: View {
             header
             if let report = store.scanReport {
                 GeometryReader { proxy in
-                    ZStack(alignment: .bottom) {
-                        scanPhoto(report)
-                        resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
-                    }.frame(width: proxy.size.width, height: proxy.size.height)
+                    if scene == .brow || scene == .eyeArea {
+                        ZStack(alignment: .bottom) {
+                            scanPhoto(report)
+                            resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
+                        }.frame(width: proxy.size.width, height: proxy.size.height)
+                    } else {
+                        // Full-face measurements stay above the tech panel,
+                        // rather than hiding the chin / lower-face labels.
+                        VStack(spacing: 8) {
+                            scanPhoto(report)
+                            resultPanel(report).padding(.horizontal, 24).padding(.bottom, 14)
+                        }.frame(width: proxy.size.width, height: proxy.size.height)
+                    }
                 }
                 playback
             } else {
@@ -68,6 +77,7 @@ struct AnalysisProgressView: View {
             }
         }
         .background(Color(hex: "444649")).ignoresSafeArea(edges: .bottom)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("analysisScanner")
         .task(id: store.scanReport?.id) {
             guard store.scanReport != nil else { return }
@@ -289,10 +299,17 @@ struct AnalysisProgressView: View {
             point.y = min(0.96, max(0.04, point.y + dy))
             values.append(.init(id: id, anchor: point, text: title + "\n" + metric.formattedValue))
         }
+        func addDistance(_ depthID: String, calibratedID: String? = nil, names: [String], dy: Double = 0) {
+            let depth = report.geometry.first { $0.id == depthID && $0.value != nil && $0.unit == "mm" }
+            let calibrated = report.geometry.first { $0.id == calibratedID && $0.value != nil && $0.unit == "mm" }
+            guard let metric = depth ?? calibrated else { return }
+            add(metric.id, depth != nil ? "同拍表面弦距" : "本人标尺二维距离", names, dy: dy)
+        }
         switch scene {
         case .face:
             add("v2-jaw-left-angle", "二维轮廓角", ["faceContour"], dy: 0.17)
             add("v2-contour-aspect", "可见轮廓高宽比", ["leftEyebrow", "rightEyebrow"], dy: -0.11)
+            addDistance("depth-surface-faceContour", calibratedID: "calibrated-faceContour-mm", names: ["faceContour"], dy: 0.02)
         case .thirds:
             let calibrated = report.geometry.contains { $0.id == "calibrated-upper-third" && $0.value != nil }
             add(calibrated ? "calibrated-upper-third" : "model-third-upper", calibrated ? "标定上庭占比" : "可见边界上段", ["leftEyebrow", "rightEyebrow"], dy: -0.08)
@@ -305,6 +322,7 @@ struct AnalysisProgressView: View {
         case .triangle:
             add("v2-triangle-mouth-angle", "三角顶角", ["outerLips"], dy: -0.045)
             add("v2-chin-height-width", "颏区高宽比", ["faceContour"], dy: 0.20)
+            addDistance("depth-surface-lip-to-chin", names: ["outerLips", "faceContour"], dy: 0.12)
         case .brow:
             for (eye, brow, tilt) in [("leftEye", "leftEyebrow", "left-brow-tilt"), ("rightEye", "rightEyebrow", "right-brow-tilt")] {
                 add(tilt, "眉端点倾角", [brow], dy: -0.045)
@@ -313,6 +331,8 @@ struct AnalysisProgressView: View {
         case .nose:
             add("nose-mouth", "鼻宽 / 嘴宽", ["nose"], dy: -0.055)
             add("lip-upper-lower", "上下唇轮廓比", ["outerLips"], dy: 0.065)
+            addDistance("depth-surface-nose", calibratedID: "calibrated-nose-mm", names: ["nose"], dy: 0.025)
+            addDistance("depth-surface-outerLips", calibratedID: "calibrated-outerLips-mm", names: ["outerLips"], dy: -0.025)
         default:
             for item in report.skin.flatMap(\.items) where scene.tokens.contains(where: { item.id.localizedCaseInsensitiveContains($0) }) {
                 guard let id = item.overlayID, let layer = report.overlays.first(where: { $0.id == id }),
@@ -362,7 +382,7 @@ struct AnalysisProgressView: View {
                     }
                 }
             }
-            Text("二维照片外观参考 · 仅有本人实测标尺时显示毫米")
+            Text("照片外观参考 · 毫米值仅来自同拍深度或本人标定")
                 .font(.system(size: 8)).foregroundStyle(.white.opacity(0.60))
         }.foregroundStyle(.white).padding(.horizontal, 18).padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,6 +390,7 @@ struct AnalysisProgressView: View {
             .overlay { ScanPanelShape().stroke(Color(hex: "7E78FF"), lineWidth: 1.5) }
             .overlay { RoundedRectangle(cornerRadius: 5).inset(by: 7).stroke(.white.opacity(0.7), lineWidth: 0.7) }
             .overlay(alignment: .topLeading) { Capsule().fill(Color(hex: "7775FF")).frame(width: 55, height: 3).offset(x: 24, y: -3) }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("scanMeasurementPanel")
     }
 

@@ -379,7 +379,8 @@ private struct ReportDetailSheet: View {
                         .background(.white.opacity(0.65), in: Circle())
                 }.accessibilityLabel("关闭报告详情")
             }.padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
-            ScrollViewReader { reader in
+            GeometryReader { viewport in
+              ScrollViewReader { reader in
               ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14, pinnedViews: [.sectionHeaders]) {
                     ReportSummaryCard(report: report)
@@ -390,12 +391,21 @@ private struct ReportDetailSheet: View {
                             Text(reportScore(report.totalScore)).font(.title3.weight(.semibold)).foregroundStyle(RuyuanStyle.purple)
                         }
                         SkinRadarChart(metrics: report.skin, isSample: report.isSample).frame(height: 205)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("reportRadarChart")
                     }.padding(.horizontal, 6)
                     Section {
-                        dimensionContent
-                        if !report.geometry.isEmpty { geometryContent }
-                        if !report.overlays.isEmpty { allLayerGallery }
-                        qualityContent
+                        VStack(alignment: .leading, spacing: 14) {
+                            dimensionContent
+                            if !report.geometry.isEmpty { geometryContent }
+                            if !report.overlays.isEmpty { allLayerGallery }
+                            qualityContent
+                        }
+                        // A short dimension still needs enough scroll extent
+                        // to bring its tab strip fully to the pinned top. This
+                        // prevents the previous radar's caption being stranded
+                        // above the tabs merely because content hits the bottom.
+                        .frame(minHeight: max(0, viewport.size.height - 66), alignment: .top)
                     } header: { dimensionTabs }
                     .id("reportDimensionSection")
                 }.padding(.horizontal, 14).padding(.bottom, 28)
@@ -406,6 +416,7 @@ private struct ReportDetailSheet: View {
                   withAnimation(.easeInOut(duration: 0.25)) {
                       reader.scrollTo("reportDimensionSection", anchor: .top)
                   }
+              }
               }
             }
         }
@@ -712,8 +723,10 @@ private struct ReportDetailSheet: View {
             } label: {
                 Label("面部比例与几何", systemImage: "face.dashed")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(RuyuanStyle.ink)
+                    .accessibilityIdentifier("reportGeometryTools")
             }
-            .accessibilityIdentifier("reportGeometryTools")
+            // Keep the disclosure's ID on its header, not on the expanded
+            // content subtree where it would overwrite the calibration link.
         }
     }
 
