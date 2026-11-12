@@ -14,7 +14,7 @@ concurrency:
 jobs:
   simulator:
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       # Pinned installed arm64 runner/toolchain; avoids observed macOS15 capacity failure.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer

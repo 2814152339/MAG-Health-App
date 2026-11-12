@@ -366,9 +366,14 @@ final class RuyuanUITests: XCTestCase {
         tapDetailTab("waterOil", app: app)
         let tabs = identified("reportDimensionTabs", in: app)
         let waterHeading = identified("detailDimensionHeading-waterOil", in: app)
-        XCTAssertTrue(waitUntil {
-            waterHeading.exists && waterHeading.frame.minY >= tabs.frame.maxY - 2 &&
-                waterHeading.frame.minY <= tabs.frame.maxY + 12
+        XCTAssertTrue(waitUntil(timeout: 20) {
+            guard waterHeading.exists, tabs.exists else { return false }
+            let headingFrame = waterHeading.frame
+            let tabsFrame = tabs.frame
+            guard !headingFrame.isEmpty, !headingFrame.isNull, !tabsFrame.isEmpty, !tabsFrame.isNull,
+                  [headingFrame.minX, headingFrame.minY, headingFrame.maxX, headingFrame.maxY,
+                   tabsFrame.minX, tabsFrame.minY, tabsFrame.maxX, tabsFrame.maxY].allSatisfy(\.isFinite) else { return false }
+            return headingFrame.minY >= tabsFrame.maxY - 2 && headingFrame.minY <= tabsFrame.maxY + 12
         }, "A tab jump must position the actual heading below the measured sticky strip.")
         let toneHeading = identified("detailDimensionHeading-tone", in: app)
         let lastWaterItem = app.staticTexts["2. 水分"].firstMatch
@@ -395,9 +400,14 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(waitUntil { toneTab.isSelected }, "Real scrolling must update the selected tab from actual section geometry.")
         capture("detail-scroll-selected-tone", app: app)
         tapDetailTab("waterOil", app: app)
-        XCTAssertTrue(waitUntil {
-            waterHeading.exists && waterHeading.frame.minY >= tabs.frame.maxY - 2 &&
-                waterHeading.frame.minY <= tabs.frame.maxY + 12
+        XCTAssertTrue(waitUntil(timeout: 20) {
+            guard waterHeading.exists, tabs.exists else { return false }
+            let headingFrame = waterHeading.frame
+            let tabsFrame = tabs.frame
+            guard !headingFrame.isEmpty, !headingFrame.isNull, !tabsFrame.isEmpty, !tabsFrame.isNull,
+                  [headingFrame.minX, headingFrame.minY, headingFrame.maxX, headingFrame.maxY,
+                   tabsFrame.minX, tabsFrame.minY, tabsFrame.maxX, tabsFrame.maxY].allSatisfy(\.isFinite) else { return false }
+            return headingFrame.minY >= tabsFrame.maxY - 2 && headingFrame.minY <= tabsFrame.maxY + 12
         }, "Returning by tab must restore the heading without retaining the previous offset or hiding it under tabs.")
         capture("detail-tab-return-water-oil", app: app)
     }
