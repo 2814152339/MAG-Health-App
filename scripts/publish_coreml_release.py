@@ -189,8 +189,16 @@ class GitHub:
         raise PublishError('too_many_signed_storage_redirects')
 
     def download(self, api_suffix: str, destination: Path, *, expected_bytes: int, expected_sha256=None):
+        # Actions ZIP endpoints require the JSON API media type for their 302;
+        # only Release binary assets negotiate application/octet-stream.
+        if re.fullmatch(r'/actions/artifacts/[1-9][0-9]*/zip', api_suffix):
+            accept = 'application/vnd.github+json'
+        elif re.fullmatch(r'/releases/assets/[1-9][0-9]*', api_suffix):
+            accept = 'application/octet-stream'
+        else:
+            raise PublishError('unsupported_authenticated_download_endpoint')
         request = urllib.request.Request(API+'/repos/'+REPOSITORY+api_suffix,
-                                         headers=self._headers('application/octet-stream'))
+                                         headers=self._headers(accept))
         try:
             response = self._api_opener.open(request, timeout=60)
         except urllib.error.HTTPError as error:

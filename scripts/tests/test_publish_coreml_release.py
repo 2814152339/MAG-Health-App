@@ -153,10 +153,26 @@ class PublicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             client.download('/actions/artifacts/1/zip', Path(directory)/'artifact.zip', expected_bytes=3, expected_sha256=checksum(data))
         self.assertIn('Authorization', dict(api_requests[0].header_items()))
+        self.assertEqual(api_requests[0].get_header('Accept'), 'application/vnd.github+json')
         self.assertNotIn('Authorization', dict(unsigned_requests[0].header_items()))
         self.assertFalse(publisher.public_storage_url('https://api.github.com/not-storage'))
         self.assertFalse(publisher.public_storage_url('http://production.blob.core.windows.net/model'))
         self.assertFalse(publisher.public_storage_url('https://evil.test/@production.blob.core.windows.net/model'))
+
+    def test_release_binary_media_type_and_unknown_endpoint_rejected(self):
+        requests = []
+        class Transport:
+            def open(self, request, **kwargs):
+                requests.append(request)
+                return Response(b'abc')
+        client = publisher.GitHub('not-a-real-token'); client._api_opener = Transport()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'model.zip'
+            client.download('/releases/assets/7', path, expected_bytes=3, expected_sha256=checksum(b'abc'))
+            self.assertEqual(requests[0].get_header('Accept'), 'application/octet-stream')
+            with self.assertRaisesRegex(publisher.PublishError, 'unsupported_authenticated_download_endpoint'):
+                client.download('/arbitrary', path, expected_bytes=3)
+            self.assertEqual(len(requests), 1)
 
     def test_upload_stream_has_exact_length_and_only_github_upload_host(self):
         requests = []
