@@ -19,7 +19,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO = "2814152339/ruyuan-aesthetics-ios"
+REPO = "2814152339/MAG-Health-App"
 DEST = ROOT / "iOS/Ruyuan/Resources/CoreML"
 LOCK = ROOT / "docs/models/coreml-artifacts.json"
 

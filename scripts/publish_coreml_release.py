@@ -25,7 +25,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT/'docs/models/coreml-artifacts.json'
-REPOSITORY = '2814152339/ruyuan-aesthetics-ios'
+REPOSITORY = '2814152339/MAG-Health-App'
 RELEASE_TAG = 'coreml-models-20261112-v1'
 API = 'https://api.github.com'
 MODELS = {'acne', 'wrinkles', 'skin_type'}
