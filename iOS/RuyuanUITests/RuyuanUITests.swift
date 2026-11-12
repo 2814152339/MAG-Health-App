@@ -89,6 +89,98 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["我的报告"].waitForExistence(timeout: 5))
     }
 
+    func testSyntheticViewerFaceFramingToolsComparisonAndFullPhotoReset() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-viewer-framing"]
+        app.launch()
+        let layerEntry = app.buttons["viewerFixtureLayerEntry"]
+        XCTAssertTrue(layerEntry.waitForExistence(timeout: 8))
+        layerEntry.tap()
+        let nav = app.navigationBars["肤色 · 演示"]
+        XCTAssertTrue(nav.waitForExistence(timeout: 5))
+        let photo = identified("overlayPhotoViewport", in: app)
+        XCTAssertTrue(photo.waitForExistence(timeout: 5))
+        let tools = app.buttons["overlayViewingTools"]
+        XCTAssertEqual(tools.value as? String, "已收起")
+        XCTAssertFalse(app.buttons["overlayZoomIn"].exists)
+        XCTAssertTrue(waitUntil {
+            guard let state = try? self.viewerState(photo) else { return false }
+            return state.region.width < 1 && state.region.height < 1
+        })
+        let initial = try viewerState(photo)
+        XCTAssertGreaterThan(initial.region.width, 0)
+        XCTAssertGreaterThan(initial.region.height, 0)
+        XCTAssertLessThan(initial.region.width, 1, "Hand-authored valid face points must drive actual initial framing.")
+        XCTAssertLessThan(initial.region.height, 1)
+        XCTAssertGreaterThanOrEqual(initial.region.minX, 0)
+        XCTAssertLessThanOrEqual(initial.region.maxX, 1)
+        XCTAssertGreaterThanOrEqual(initial.region.minY, 0)
+        XCTAssertLessThanOrEqual(initial.region.maxY, 1)
+        XCTAssertEqual(initial.scale, 1, accuracy: 0.0001)
+        XCTAssertEqual(app.staticTexts["overlayObservationValue"].label, "较均匀 · 演示")
+        let compactPhotoHeight = photo.frame.height
+        XCTAssertGreaterThan(compactPhotoHeight, 180)
+        capture("viewer-initial-face-framing-tools-collapsed", app: app)
+
+        tools.tap()
+        XCTAssertTrue(waitUntil { tools.value as? String == "已展开" })
+        let zoomIn = app.buttons["overlayZoomIn"]
+        XCTAssertTrue(reveal(zoomIn, in: app), "The production tools drawer must retain reachable zoom controls.")
+        XCTAssertTrue(waitUntil { photo.frame.height < compactPhotoHeight - 30 },
+                      "Opening real tools must change the layout, not just an accessibility flag.")
+        zoomIn.tap()
+        XCTAssertTrue(waitUntil { (try? self.viewerState(photo).scale) == 1.5 })
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).press(forDuration: 0.05,
+            thenDragTo: photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
+        XCTAssertTrue(waitUntil { abs((try? self.viewerState(photo).offset.height) ?? 0) > 0.1 },
+                      "A real photo drag must move the shared image/overlay transform within its bounds.")
+        let beforeComparison = try viewerState(photo)
+        let comparisonPhotoHeight = photo.frame.height
+        capture("viewer-face-framing-tools-expanded-and-panned", app: app)
+
+        let original = app.segmentedControls.buttons["原图"].firstMatch
+        original.tap()
+        XCTAssertTrue(waitUntil { original.isSelected })
+        XCTAssertTrue(waitUntil { !app.staticTexts["overlayObservationValue"].exists })
+        let originalState = try viewerState(photo)
+        XCTAssertEqual(originalState.region, beforeComparison.region)
+        XCTAssertEqual(originalState.scale, beforeComparison.scale, accuracy: 0.0001)
+        XCTAssertEqual(originalState.offset, beforeComparison.offset,
+                       "Comparing the same photo must not jump to a different crop or pan.")
+        XCTAssertTrue(waitUntil { abs(photo.frame.height - comparisonPhotoHeight) < 1 },
+                      "The original/annotation comparison must retain the actual photo viewport height.")
+        app.segmentedControls.buttons["演示标注"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["overlayObservationValue"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.staticTexts["overlayObservationValue"].label, "较均匀 · 演示")
+
+        tools.tap()
+        XCTAssertTrue(waitUntil { tools.value as? String == "已收起" })
+        XCTAssertTrue(waitUntil { photo.frame.height > compactPhotoHeight - 2 })
+        XCTAssertTrue((try viewerState(photo)).offset.width.isFinite)
+        XCTAssertTrue((try viewerState(photo)).offset.height.isFinite)
+        app.buttons["overlayResetView"].tap()
+        XCTAssertTrue(waitUntil {
+            guard let value = try? self.viewerState(photo) else { return false }
+            return value.region == CGRect(x: 0, y: 0, width: 1, height: 1)
+                && value.scale == 1 && value.offset == .zero
+        })
+        capture("viewer-reset-complete-original-photo", app: app)
+        nav.buttons["完成"].firstMatch.tap()
+        let originalEntry = app.buttons["viewerFixtureOriginalEntry"]
+        XCTAssertTrue(originalEntry.waitForExistence(timeout: 3))
+        originalEntry.tap()
+        XCTAssertTrue(app.navigationBars["原图"].waitForExistence(timeout: 5))
+        XCTAssertTrue(photo.waitForExistence(timeout: 3))
+        let fullOriginal = try viewerState(photo)
+        XCTAssertEqual(fullOriginal.region, CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertEqual(fullOriginal.scale, 1, accuracy: 0.0001)
+        XCTAssertEqual(fullOriginal.offset, .zero)
+        XCTAssertFalse(app.staticTexts["overlayObservationValue"].exists)
+        capture("viewer-original-entry-never-auto-crops", app: app)
+        app.navigationBars["原图"].buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(layerEntry.waitForExistence(timeout: 3))
+    }
+
     func testSyntheticLongSummaryExpandsWithoutChangingSource() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-test-long-summary"]
@@ -209,6 +301,11 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertEqual(observationValue.label, "较均匀 · 演示",
                        "The enlarged layer must retain this exact tapped sample item's original value, not a score inferred from the mask.")
         XCTAssertEqual(app.staticTexts["overlayObservationTitle"].label, "肤色均匀度")
+        let viewingTools = app.buttons["overlayViewingTools"]
+        XCTAssertEqual(viewingTools.value as? String, "已收起")
+        viewingTools.tap()
+        XCTAssertTrue(waitUntil { viewingTools.value as? String == "已展开" })
+        XCTAssertTrue(reveal(identified("overlayZoomIn", in: app), in: app))
         identified("overlayZoomIn", in: app).tap()
         XCTAssertTrue(app.staticTexts["150%"].waitForExistence(timeout: 3))
         identified("overlayZoomOut", in: app).tap()
@@ -231,7 +328,7 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(observationValue.waitForExistence(timeout: 3))
         XCTAssertEqual(observationValue.label, "较均匀 · 演示")
         let genericLayer = app.buttons["overlayLayer-sample-pigment"]
-        XCTAssertTrue(genericLayer.isHittable)
+        XCTAssertTrue(reveal(genericLayer, in: app))
         genericLayer.tap()
         XCTAssertTrue(waitUntil { !observationValue.exists },
                       "A generic layer-strip selection must clear the card reference, including when selecting the same mask.")
@@ -599,7 +696,7 @@ final class RuyuanUITests: XCTestCase {
     private func visibleScroll(in app: XCUIApplication) -> XCUIElement {
         // SwiftUI can propagate a container ID to its header children. Select
         // the scroll view itself rather than the first text with the same ID.
-        for identifier in ["reportDetailScrollView", "reportDetailSheet", "reportOverview"] {
+        for identifier in ["overlayToolsScrollView", "reportDetailScrollView", "reportDetailSheet", "reportOverview"] {
             let scroll = app.scrollViews.matching(identifier: identifier).firstMatch
             if scroll.exists && scroll.isHittable { return scroll }
         }
@@ -636,7 +733,7 @@ final class RuyuanUITests: XCTestCase {
         // row whose center was underneath the fixed CTA dock / system tab bar.
         guard unobscuredViewport(in: app).contains(center) else { return false }
         let tabs = identified("reportDimensionTabs", in: app)
-        if !element.identifier.hasPrefix("detail-tab-"), tabs.exists, tabs.frame.contains(center) { return false }
+        if !element.identifier.hasPrefix("detail-tab-"), tabs.exists, tabs.isHittable, tabs.frame.contains(center) { return false }
         return true
     }
 
@@ -681,7 +778,7 @@ final class RuyuanUITests: XCTestCase {
         for _ in 0..<8 {
             var viewport = unobscuredViewport(in: app).insetBy(dx: 3, dy: 3)
             let tabs = identified("reportDimensionTabs", in: app)
-            if tabs.exists, tabs.frame.minY <= viewport.minY + 4, tabs.frame.maxY > viewport.minY {
+            if tabs.exists, tabs.isHittable, tabs.frame.minY <= viewport.minY + 4, tabs.frame.maxY > viewport.minY {
                 let bottom = viewport.maxY
                 viewport.origin.y = tabs.frame.maxY + 4
                 viewport.size.height = max(0, bottom - viewport.minY)
@@ -698,6 +795,46 @@ final class RuyuanUITests: XCTestCase {
                 thenDragTo: origin.withOffset(CGVector(dx: x, dy: y - delta / 2)))
         }
         return false
+    }
+
+    private struct ViewerState {
+        let region: CGRect
+        let scale: Double
+        let offset: CGSize
+    }
+
+    /// Reads the real production viewport's presentation state; this is not
+    /// image correctness evidence. Actual screenshots remain separate evidence.
+    private func viewerState(_ element: XCUIElement, file: StaticString = #filePath,
+                             line: UInt = #line) throws -> ViewerState {
+        guard let raw = element.value as? String else {
+            XCTFail("Missing viewer presentation state.", file: file, line: line)
+            throw NSError(domain: "ViewerStateTests", code: 1)
+        }
+        var fields: [String: [Double]] = [:]
+        for component in raw.split(separator: ";") {
+            let pair = component.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, fields[String(pair[0])] == nil else {
+                XCTFail("Malformed or duplicate viewer field: \(raw)", file: file, line: line)
+                throw NSError(domain: "ViewerStateTests", code: 2)
+            }
+            let pieces = pair[1].split(separator: ",", omittingEmptySubsequences: false)
+            let values = pieces.compactMap { Double($0) }
+            guard pieces.count == values.count, values.allSatisfy(\.isFinite) else {
+                XCTFail("Invalid viewer presentation numbers: \(raw)", file: file, line: line)
+                throw NSError(domain: "ViewerStateTests", code: 3)
+            }
+            fields[String(pair[0])] = values
+        }
+        guard fields.count == 3, let region = fields["region"], region.count == 4,
+              let scale = fields["scale"], scale.count == 1,
+              let offset = fields["offset"], offset.count == 2 else {
+            XCTFail("Incomplete viewer presentation state: \(raw)", file: file, line: line)
+            throw NSError(domain: "ViewerStateTests", code: 4)
+        }
+        return ViewerState(region: CGRect(x: CGFloat(region[0]), y: CGFloat(region[1]),
+                                          width: CGFloat(region[2]), height: CGFloat(region[3])),
+                           scale: scale[0], offset: CGSize(width: CGFloat(offset[0]), height: CGFloat(offset[1])))
     }
 
     private func waitUntil(timeout: TimeInterval = 5, _ condition: @escaping () -> Bool) -> Bool {

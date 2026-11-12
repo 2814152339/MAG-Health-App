@@ -86,8 +86,15 @@ struct FocusedReportPhotoView: View {
     var layers: [OverlayLayer] = []
     var landmarks: [LandmarkPath] = []
     var region: CGRect? = nil
+    var clipsToViewport = true
 
+    @ViewBuilder
     var body: some View {
+        if clipsToViewport { photoContent.clipped() }
+        else { photoContent }
+    }
+
+    private var photoContent: some View {
         GeometryReader { proxy in
             let transform = ReportPhotoTransform(
                 imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
@@ -99,7 +106,7 @@ struct FocusedReportPhotoView: View {
             .frame(width: transform.renderedSize.width, height: transform.renderedSize.height)
             .position(x: transform.origin.x + transform.renderedSize.width / 2,
                       y: transform.origin.y + transform.renderedSize.height / 2)
-        }.clipped()
+        }
     }
 }
 
@@ -190,41 +197,52 @@ struct OverlayView: View {
     @State private var savedOffset: CGSize = .zero
     @State private var focusRegion: CGRect?
     @State private var showsLegend = true
+    @State private var showsViewingTools = false
+    @State private var currentViewport: CGSize = .zero
 
     private var selectedLayer: OverlayLayer? {
         let matches = report.overlays.filter { $0.id == selectedLayerID }
         return matches.count == 1 ? matches.first : nil
     }
 
-    private var selectedObservation: SkinItem? {
+    // Keep hidden legend layout stable when comparing the original image. The
+    // actual observation is never exposed in the original-mode accessibility tree.
+    private var legendObservation: SkinItem? {
         OverlayItemPresentation.resolvedItem(selectedItemReference, in: report,
-            selectedLayerID: selectedLayerID, showOverlay: showOverlay)
+            selectedLayerID: selectedLayerID, showOverlay: true)
+    }
+
+    private var photoImageSize: CGSize {
+        CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight)))
+    }
+
+    private var framingAccessibilityValue: String {
+        let region = focusRegion ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        return "region=\(Double(region.minX)),\(Double(region.minY)),\(Double(region.width)),\(Double(region.height));scale=\(Double(scale));offset=\(Double(offset.width)),\(Double(offset.height))"
     }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if report.isSample {
-                    Label("演示图层 · 非真实检测结果", systemImage: "info.circle")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color(hex: "E4D1F0"))
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity)
-                        .background(RuyuanStyle.purple.opacity(0.2))
+            GeometryReader { available in
+                VStack(spacing: 0) {
+                    if report.isSample {
+                        Label("演示图层 · 非真实检测结果", systemImage: "info.circle")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Color(hex: "E4D1F0"))
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity)
+                            .background(RuyuanStyle.purple.opacity(0.2))
+                    }
+                    zoomablePhoto
+                    controls(maximumToolsHeight: min(220, max(0, available.size.height * 0.32)))
                 }
-                zoomablePhoto
-                controls
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(.black)
-            // VStack is a layout container, not automatically an accessibility
-            // node. Expose a stable group without combining/hiding its controls.
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("overlayViewer")
             .navigationTitle(selectedLayer?.title ?? "原图")
             .navigationBarTitleDisplayMode(.inline)
-            // The presenting detail sheet hides its own navigation bar. A full
-            // screen viewer must override that inherited visibility preference;
-            // toolbarBackground(.visible) alone only affects the background.
             .toolbar(.visible, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -235,6 +253,7 @@ struct OverlayView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { focusRegion = nil; resetZoom() } label: { Image(systemName: "arrow.counterclockwise") }
                         .foregroundStyle(.white).accessibilityLabel("重置缩放与位置")
+                        .accessibilityIdentifier("overlayResetView")
                 }
             }
             .preferredColorScheme(.dark)
@@ -244,6 +263,9 @@ struct OverlayView: View {
             selectedItemReference = initialItemReference
             showOverlay = initialLayerID != nil
             showLandmarks = false
+            focusRegion = OverlayViewerGeometry.initialFaceRegion(landmarks: report.landmarks,
+                selectedLayer: selectedLayer, imageSize: photoImageSize)
+            resetZoom()
         }
     }
 
@@ -251,11 +273,13 @@ struct OverlayView: View {
         GeometryReader { proxy in
             let photo = FocusedReportPhotoView(report: report, image: store.image(for: report),
                 layers: showOverlay ? selectedLayer.map { [$0] } ?? [] : [],
-                landmarks: showOverlay && showLandmarks ? report.landmarks : [], region: focusRegion)
+                landmarks: showOverlay && showLandmarks ? report.landmarks : [], region: focusRegion,
+                clipsToViewport: false)
             let transform = ReportPhotoTransform(
                 imageSize: CGSize(width: CGFloat(max(1, report.imageWidth)), height: CGFloat(max(1, report.imageHeight))),
                 viewport: proxy.size, region: focusRegion ?? CGRect(x: 0, y: 0, width: 1, height: 1))
-            let fitted = transform.renderedSize
+            let imageBounds = CGRect(origin: transform.origin, size: transform.renderedSize)
+            let panInput = OverlayViewerGeometry.PanInput(imageBounds: imageBounds, viewport: proxy.size, scale: scale)
             ZStack {
                 Color.clear
                 photo
@@ -268,12 +292,13 @@ struct OverlayView: View {
             .gesture(
                 MagnificationGesture()
                     .onChanged { value in
+                        guard value.isFinite else { return }
                         scale = min(max(savedScale * value, 1), 6)
-                        offset = bounded(offset, scale: scale, fitted: fitted, bounds: proxy.size)
+                        offset = bounded(offset, scale: scale, imageBounds: imageBounds, bounds: proxy.size)
                     }
                     .onEnded { _ in
                         savedScale = scale
-                        offset = bounded(offset, scale: scale, fitted: fitted, bounds: proxy.size)
+                        offset = bounded(offset, scale: scale, imageBounds: imageBounds, bounds: proxy.size)
                         savedOffset = offset
                     }
             )
@@ -282,70 +307,118 @@ struct OverlayView: View {
                     .onChanged { value in
                         let next = CGSize(width: savedOffset.width + value.translation.width,
                                           height: savedOffset.height + value.translation.height)
-                        offset = bounded(next, scale: scale, fitted: fitted, bounds: proxy.size)
+                        offset = bounded(next, scale: scale, imageBounds: imageBounds, bounds: proxy.size)
                     }
                     .onEnded { _ in savedOffset = offset }
             )
             .onTapGesture(count: 2) { withAnimation(.easeInOut(duration: 0.2)) { resetZoom() } }
-            .accessibilityHint("双指缩放，单指拖动，双击重置。也可使用下方缩放按钮。")
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("overlayPhotoViewport")
+            .accessibilityValue(framingAccessibilityValue)
+            .accessibilityHint("双指缩放，单指拖动，双击重置。展开图层与查看工具可使用缩放按钮。")
+            .onChange(of: panInput, initial: true) { _, input in
+                // Initial framing, focus/reset, button/pinch zoom, tool expansion,
+                // and window resize all change this same real geometry input.
+                currentViewport = input.viewport
+                offset = bounded(offset, scale: input.scale, imageBounds: input.imageBounds, bounds: input.viewport)
+                savedOffset = offset
+            }
         }
     }
 
-    private var controls: some View {
+    private func controls(maximumToolsHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let layer = selectedLayer, showOverlay, showsLegend {
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 7) {
-                        Circle().fill(Color(hex: layer.colorHex)).frame(width: 7, height: 7)
-                        Text(selectedObservation?.title ?? layer.title).font(.caption.weight(.semibold))
-                            .accessibilityIdentifier("overlayObservationTitle")
-                        Spacer()
-                        Text(report.isSample ? "演示图层" : "照片外观参考")
-                            .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
-                    }.foregroundStyle(RuyuanStyle.ink)
-                    if let item = selectedObservation {
-                        Text(item.valueText).font(.subheadline.weight(.semibold))
-                            .foregroundStyle(RuyuanStyle.purple)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("overlayObservationValue")
-                        if item.title != layer.title {
-                            Text(layer.title).font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted)
+            if let layer = selectedLayer, showsLegend {
+                legend(layer: layer)
+                    .opacity(showOverlay ? 1 : 0)
+                    .accessibilityHidden(!showOverlay)
+                    .overlay {
+                        if !showOverlay {
+                            Text("原图对照 · 已隐藏分析标注")
+                                .font(.caption).foregroundStyle(.white.opacity(0.7))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
-                    Text(layer.note).font(.system(size: 10)).lineSpacing(2).foregroundStyle(RuyuanStyle.muted)
-                        .lineLimit(2)
-                    if layer.id == "appearance-under-eye" {
-                        let regions = OverlayPresentationGeometry.eyeSamplingRegions(for: layer, landmarks: report.landmarks,
-                            imageSize: CGSize(width: CGFloat(report.imageWidth), height: CGFloat(report.imageHeight)))
-                        Text(regions.isEmpty ? "本次未标出稳定的眼下采样范围。" : "细框为眼下采样范围，不是病灶边界。")
-                            .font(.system(size: 10)).foregroundStyle(RuyuanStyle.ink)
-                            .accessibilityIdentifier("eyeSamplingRangeLegend")
-                    }
-                    Text("来源：\(report.isSample ? "原创演示" : layer.source)")
-                        .font(.system(size: 9)).foregroundStyle(RuyuanStyle.muted).lineLimit(1)
-                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
             }
             Picker("显示模式", selection: $showOverlay) {
                 Text("原图").tag(false)
                 Text(report.isSample ? "演示标注" : "分析标注").tag(true)
             }
             .pickerStyle(.segmented)
+            Button { showsViewingTools.toggle() } label: {
+                HStack {
+                    Label("图层与查看工具", systemImage: "slider.horizontal.3")
+                    Spacer()
+                    Image(systemName: showsViewingTools ? "chevron.up" : "chevron.down")
+                }
+                .font(.caption.weight(.medium)).foregroundStyle(Color(hex: "E4D1F0"))
+                .frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("overlayViewingTools")
+            .accessibilityValue(showsViewingTools ? "已展开" : "已收起")
+            if showsViewingTools {
+                ScrollView {
+                    viewingTools.padding(.bottom, 4)
+                }
+                .frame(maxHeight: maximumToolsHeight)
+                .accessibilityIdentifier("overlayToolsScrollView")
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .background(.black)
+    }
+
+    private func legend(layer: OverlayLayer) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
+                Circle().fill(Color(hex: layer.colorHex)).frame(width: 7, height: 7)
+                Text(legendObservation?.title ?? layer.title).font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("overlayObservationTitle")
+                Spacer()
+                Text(report.isSample ? "演示图层" : "照片外观参考")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.muted)
+            }.foregroundStyle(RuyuanStyle.ink)
+            if let item = legendObservation {
+                Text(item.valueText).font(.subheadline.weight(.semibold))
+                    .foregroundStyle(RuyuanStyle.purple)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("overlayObservationValue")
+                if item.title != layer.title {
+                    Text(layer.title).font(.caption2).foregroundStyle(RuyuanStyle.muted)
+                }
+            }
+            Text(layer.note).font(.caption2).lineSpacing(2).foregroundStyle(RuyuanStyle.muted)
+                .lineLimit(2)
+            if layer.id == "appearance-under-eye" {
+                let regions = OverlayPresentationGeometry.eyeSamplingRegions(for: layer, landmarks: report.landmarks,
+                    imageSize: photoImageSize)
+                Text(regions.isEmpty ? "本次未标出稳定的眼下采样范围。" : "细框为眼下采样范围，不是病灶边界。")
+                    .font(.caption2).foregroundStyle(RuyuanStyle.ink)
+                    .accessibilityIdentifier("eyeSamplingRangeLegend")
+            }
+            Text("来源：\(report.isSample ? "原创演示" : layer.source)")
+                .font(.caption2).foregroundStyle(RuyuanStyle.muted).lineLimit(1)
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var viewingTools: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if !report.overlays.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(report.overlays) { layer in
                             Button {
                                 selectedLayerID = layer.id; showOverlay = true; showLandmarks = false; focusRegion = nil
-                                // The layer strip is not a particular report card.
-                                // Do not carry a previous card's value to it, even
-                                // if another item shares the newly selected mask.
+                                // A layer-strip tap is not a particular report card.
                                 selectedItemReference = nil
                                 resetZoom()
                             } label: {
                                 HStack(spacing: 5) {
                                     Circle().fill(Color(hex: layer.colorHex)).frame(width: 5, height: 5)
-                                    Text(layer.title).font(.system(size: 10))
+                                    Text(layer.title).font(.caption2)
                                 }.padding(.horizontal, 10).padding(.vertical, 8)
                                     .foregroundStyle(.white)
                                     .background(selectedLayerID == layer.id ? RuyuanStyle.purple : .white.opacity(0.12), in: Capsule())
@@ -390,6 +463,13 @@ struct OverlayView: View {
                     .accessibilityLabel("放大图像").frame(width: 34, height: 36)
             }
             .foregroundStyle(Color(hex: "E4D1F0"))
+            if let layer = selectedLayer {
+                Text(layer.note).font(.caption).foregroundStyle(.white.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("来源：\(report.isSample ? "原创演示" : layer.source)")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if report.landmarks.isEmpty && report.overlays.isEmpty {
                 Text("此报告未提供可显示的特征点或图层。")
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
@@ -398,27 +478,30 @@ struct OverlayView: View {
                     .font(.caption).foregroundStyle(.white.opacity(0.6))
             }
             Text("双指缩放 · 拖动查看 · 双击重置")
-                .font(.caption2).foregroundStyle(.white.opacity(0.45))
+                .font(.caption2).foregroundStyle(.white.opacity(0.6))
                 .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(.black)
     }
 
-    private func bounded(_ value: CGSize, scale: CGFloat, fitted: CGSize, bounds: CGSize) -> CGSize {
-        let maxX = max(0, (fitted.width * scale - bounds.width) / 2)
-        let maxY = max(0, (fitted.height * scale - bounds.height) / 2)
-        return CGSize(width: min(max(value.width, -maxX), maxX),
-                      height: min(max(value.height, -maxY), maxY))
+    private func bounded(_ value: CGSize, scale: CGFloat, imageBounds: CGRect, bounds: CGSize) -> CGSize {
+        OverlayViewerGeometry.boundedOffset(value, scale: scale, imageBounds: imageBounds, viewport: bounds)
     }
 
     private func resetZoom() {
-        scale = 1; savedScale = 1; offset = .zero; savedOffset = .zero
+        scale = 1; savedScale = 1
+        let transform = ReportPhotoTransform(imageSize: photoImageSize, viewport: currentViewport,
+            region: focusRegion ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+        // A double tap can reset an already-1x off-center ROI without changing
+        // PanInput. Clamp here too; zero is not always a valid translation.
+        offset = bounded(.zero, scale: 1,
+            imageBounds: CGRect(origin: transform.origin, size: transform.renderedSize), bounds: currentViewport)
+        savedOffset = offset
     }
 
     private func stepZoom(_ amount: CGFloat) {
         scale = min(max(scale + amount, 1), 6)
         savedScale = scale
-        offset = .zero; savedOffset = .zero
+        // Preserve the current pan until the new PanInput clamps it, rather than
+        // replacing a valid off-center position with an invalid zero offset.
     }
 }

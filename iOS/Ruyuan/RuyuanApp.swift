@@ -11,6 +11,8 @@ struct RuyuanApp: App {
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--ui-test-camera-review") {
                     CameraReviewUITestHarness()
+                } else if ProcessInfo.processInfo.arguments.contains("--ui-test-viewer-framing") {
+                    ViewerFramingUITestHarness().environmentObject(store)
                 } else {
                     RootView().environmentObject(store)
                 }
@@ -60,6 +62,35 @@ private struct CameraReviewUITestHarness: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .foregroundStyle(.white).background(.black)
             }
+        }
+    }
+}
+
+/// Opens the unchanged production viewer on the bundled, explicitly synthetic
+/// illustration and hand-authored points. No camera, models, network or saves.
+@MainActor
+private struct ViewerFramingUITestHarness: View {
+    private enum Entry: String, Identifiable {
+        case layer, original
+        var id: String { rawValue }
+    }
+    @State private var entry: Entry?
+    private let report = SampleData.scannerReport
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("仅用于自动测试的原创插画与手工点位，不是真实检测结果。")
+            Button("打开合成面部图层") { entry = .layer }
+                .accessibilityIdentifier("viewerFixtureLayerEntry")
+            Button("打开合成完整原图") { entry = .original }
+                .accessibilityIdentifier("viewerFixtureOriginalEntry")
+        }
+        .padding(24)
+        .fullScreenCover(item: $entry) { target in
+            OverlayView(report: report,
+                initialLayerID: target == .layer ? "sample-pigment" : nil,
+                initialItemReference: target == .layer ?
+                    OverlayItemPresentation.reference(in: report, dimension: .tone, itemID: "sample-tone") : nil)
         }
     }
 }
