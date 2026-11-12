@@ -145,7 +145,8 @@ DEVICE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["udid"
 DEVICE_STATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' "$OUT/simulator.json")"
 ARGS=(-project "$ROOT/iOS/Ruyuan.xcodeproj" -scheme Ruyuan
   -configuration Debug -sdk iphonesimulator -derivedDataPath "$DERIVED"
-  -destination "platform=iOS Simulator,id=$DEVICE" -destination-timeout 120
+  -destination "platform=iOS Simulator,id=$DEVICE,arch=arm64" -destination-timeout 120
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=)
 
 BUILD_STATUS=failed

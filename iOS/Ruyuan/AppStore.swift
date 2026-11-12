@@ -117,6 +117,8 @@ final class AppStore: ObservableObject {
         // Match the original camera pixels before upright isotropic preprocessing.
         // Never persist/upload depth; interrupted remote jobs resume as ordinary 2D.
         let trustedDepth = depth?.matches(image: image) == true ? depth : nil
+        let trustedDepthNotice = depth != nil && trustedDepth == nil
+            ? "同拍深度与照片绑定校验失败，按二维照片分析。" : depthNotice
         analysisTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -134,7 +136,7 @@ final class AppStore: ObservableObject {
                 } else {
                     report = try await LocalAnalyzer.analyze(image: prepared.image, reportID: UUID().uuidString,
                                                            imageFileName: filename, depth: trustedDepth,
-                                                           depthNotice: depthNotice) { [weak self] stage in
+                                                           depthNotice: trustedDepthNotice) { [weak self] stage in
                         Task { @MainActor in if self?.runID == run { self?.stage = stage } }
                     }
                 }
