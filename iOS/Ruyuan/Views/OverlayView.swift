@@ -117,8 +117,13 @@ struct NormalizedOverlayDrawing: View {
                     } else {
                         let path = makePath(points, closed: layer.kind == .polygons, size: size)
                         if layer.kind == .polygons { context.fill(path, with: .color(color.opacity(0.32))) }
-                        context.stroke(path, with: .color(color),
-                                       style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                        // Semantic masks are actual horizontal pixel runs. A
+                        // thick outline on every run would create artificial
+                        // stripes and make the translucent mask look opaque.
+                        if !(layer.id.hasPrefix("semantic-") && layer.kind == .polygons) {
+                            context.stroke(path, with: .color(color),
+                                           style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                        }
                     }
                 }
             }

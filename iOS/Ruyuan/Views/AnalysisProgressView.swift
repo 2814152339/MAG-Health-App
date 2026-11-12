@@ -75,7 +75,7 @@ struct AnalysisProgressView: View {
             while store.scanReport != nil {
                 do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
                 if skipRequested { store.finishScanPresentation(); return }
-                if paused { continue }
+                if paused || showsMaskViewer { continue }
                 sceneElapsed += 0.25
                 if sceneElapsed >= scene.duration {
                     if sceneIndex == ScanScene.allCases.count - 1 { store.finishScanPresentation(); return }
