@@ -50,6 +50,17 @@ enum SampleData {
     }()
 
     #if DEBUG
+    /// Long source text for actual report-layout regression, never a saved result.
+    static var longSummaryReport: AnalysisReport {
+        var value = report
+        value.id = "ruyuan-ui-long-summary-synthetic-v1"
+        value.summary = "仅用于自动测试的合成长结论，不是真实人物的检测结果。\n" +
+            (1...8).map { index in
+                "第\(index)段合成说明：照片外观、本人自评和模型输出分别保留来源；展开与收起只调整显示范围，不修改报告原文。"
+            }.joined(separator: "\n") + "\n合成结论原文结束。"
+        return value
+    }
+
     /// Manually authored points on our vector illustration, not Vision output.
     static var scannerReport: AnalysisReport {
         func p(_ x: Double, _ y: Double) -> NormalizedPoint { .init(x: x, y: y) }

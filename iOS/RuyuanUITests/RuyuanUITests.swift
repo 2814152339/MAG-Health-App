@@ -22,6 +22,44 @@ final class RuyuanUITests: XCTestCase {
         super.record(issue)
     }
 
+    func testSyntheticCameraPhotoReviewLayoutAndActions() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-camera-review"]
+        app.launch()
+        let photo = identified("cameraReviewPhoto", in: app)
+        XCTAssertTrue(photo.waitForExistence(timeout: 8))
+        let retake = app.buttons["cameraRetakePhoto"]
+        let use = app.buttons["cameraUsePhoto"]
+        let close = app.buttons["cameraClose"]
+        XCTAssertTrue(retake.isHittable)
+        XCTAssertTrue(use.isHittable)
+        XCTAssertTrue(close.isHittable)
+        XCTAssertGreaterThanOrEqual(retake.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(use.frame.width, 44)
+        XCTAssertFalse(retake.frame.intersects(use.frame))
+        XCTAssertGreaterThanOrEqual(photo.frame.width, app.frame.width - 2,
+                                    "Confirmation must retain the full-width photo viewport, not the old padded card.")
+        XCTAssertGreaterThan(photo.frame.height, 180)
+        XCTAssertLessThanOrEqual(photo.frame.maxY, min(retake.frame.minY, use.frame.minY) + 1,
+                                 "Photo and confirmation controls must not overlap on the small-screen simulator.")
+        XCTAssertTrue(app.staticTexts["UI自动测试合成插画 · 不调用摄像头或生成测肤结果"].exists)
+        capture("camera-review-synthetic", app: app)
+        retake.tap()
+        let outcome = app.staticTexts["cameraReviewFixtureOutcome"]
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "测试已收到重拍操作")
+        app.buttons["cameraReviewFixtureReturn"].tap()
+        XCTAssertTrue(use.waitForExistence(timeout: 3))
+        use.tap()
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "测试已收到使用照片操作")
+        app.buttons["cameraReviewFixtureReturn"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "测试已收到关闭操作")
+    }
+
     func testHomeAndSampleReportFlow() {
         let app = XCUIApplication()
         app.launch()
@@ -49,6 +87,50 @@ final class RuyuanUITests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 5))
         history.tap()
         XCTAssertTrue(app.navigationBars["我的报告"].waitForExistence(timeout: 5))
+    }
+
+    func testSyntheticLongSummaryExpandsWithoutChangingSource() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-long-summary"]
+        app.launch()
+        XCTAssertTrue(identified("reportOverview", in: app).waitForExistence(timeout: 8))
+        let text = app.staticTexts["overviewSummaryText"]
+        let toggle = app.buttons["overviewSummaryToggle"]
+        XCTAssertTrue(reveal(toggle, in: app))
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Long source text must expose the real measured overflow control.")
+        XCTAssertEqual(toggle.value as? String, "已收起，显示前6行")
+        let source = text.label
+        XCTAssertTrue(source.hasPrefix("仅用于自动测试的合成长结论"))
+        XCTAssertTrue(source.hasSuffix("合成结论原文结束。"), "Collapsed AX text must retain the entire actual source.")
+        let compactHeight = text.frame.height
+        capture("summary-six-line-preview", app: app)
+        toggle.tap()
+        XCTAssertTrue(waitUntil { toggle.value as? String == "已展开完整原文" })
+        XCTAssertTrue(waitUntil { text.frame.height > compactHeight + 30 },
+                      "The real paragraph layout must expand, not only change a button label.")
+        XCTAssertEqual(text.label, source)
+        capture("summary-expanded-source", app: app)
+        XCTAssertTrue(reveal(toggle, in: app))
+        toggle.tap()
+        XCTAssertTrue(waitUntil { toggle.value as? String == "已收起，显示前6行" })
+        XCTAssertEqual(text.label, source)
+        XCTAssertTrue(waitUntil { abs(text.frame.height - compactHeight) <= 2 })
+        // Leave overview expanded while opening a separately collapsed card;
+        // an accidentally shared expansion binding must fail this assertion.
+        XCTAssertTrue(reveal(toggle, in: app))
+        toggle.tap()
+        XCTAssertTrue(waitUntil { toggle.value as? String == "已展开完整原文" })
+        let detailsButton = identified("openReportDetails", in: app)
+        XCTAssertTrue(reveal(detailsButton, in: app))
+        detailsButton.tap()
+        let detail = identified("reportDetailSheet", in: app)
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let detailText = app.staticTexts["detailSummaryText"]
+        let detailToggle = app.buttons["detailSummaryToggle"]
+        XCTAssertTrue(detailToggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(detailToggle.value as? String, "已收起，显示前6行", "Each report card owns an independent expansion state.")
+        XCTAssertEqual(detailText.label, source)
+        capture("detail-long-summary-collapsed", app: app)
     }
 
     func testSampleDetailDimensionsOverlayAndLocalFeedback() {

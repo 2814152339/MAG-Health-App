@@ -6,9 +6,64 @@ import UIKit
 struct RuyuanApp: App {
     @StateObject private var store = AppStore()
     var body: some Scene {
-        WindowGroup { RootView().environmentObject(store).preferredColorScheme(.light) }
+        WindowGroup {
+            Group {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-camera-review") {
+                    CameraReviewUITestHarness()
+                } else {
+                    RootView().environmentObject(store)
+                }
+                #else
+                RootView().environmentObject(store)
+                #endif
+            }
+            .preferredColorScheme(.light)
+        }
     }
 }
+
+#if DEBUG
+/// Exercises the production confirmation layout with our own vector illustration.
+/// No CameraService, camera permission, private photo, analysis, or persistence.
+@MainActor
+private struct CameraReviewUITestHarness: View {
+    private enum Outcome: Equatable { case review, retake, use, close }
+    @State private var outcome: Outcome = .review
+    private let image: UIImage
+
+    init() {
+        let renderer = ImageRenderer(content: SampleFaceDiagram().frame(width: 600, height: 800))
+        renderer.scale = 1
+        guard let rendered = renderer.uiImage, rendered.cgImage != nil,
+              rendered.size.width == 600, rendered.size.height == 800 else {
+            preconditionFailure("Synthetic camera-review fixture must render its actual 600x800 illustration.")
+        }
+        image = rendered
+    }
+
+    var body: some View {
+        Group {
+            if outcome == .review {
+                CameraPhotoReview(image: image,
+                    depthNotice: "UI自动测试合成插画 · 不调用摄像头或生成测肤结果",
+                    onRetake: { outcome = .retake }, onUse: { outcome = .use },
+                    onClose: { outcome = .close })
+            } else {
+                VStack(spacing: 24) {
+                    Text(outcome == .retake ? "测试已收到重拍操作" :
+                         outcome == .use ? "测试已收到使用照片操作" : "测试已收到关闭操作")
+                        .accessibilityIdentifier("cameraReviewFixtureOutcome")
+                    Button("返回照片确认") { outcome = .review }
+                        .accessibilityIdentifier("cameraReviewFixtureReturn")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundStyle(.white).background(.black)
+            }
+        }
+    }
+}
+#endif
 
 @MainActor
 struct RootView: View {
@@ -114,10 +169,18 @@ struct RootView: View {
                 store.beginUITestScan()
                 return
             }
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-long-summary") {
+                store.activeReport = SampleData.longSummaryReport
+                return
+            }
             #endif
             await store.resumePendingAnalysis()
         }
         .onChange(of: scenePhase) { _, phase in
+            #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--ui-test-scan") || arguments.contains("--ui-test-long-summary") { return }
+            #endif
             if phase == .active { Task { await store.resumePendingAnalysis() } }
         }
     }
